@@ -39,7 +39,9 @@ import { saveAs } from "file-saver";
 const STORAGE_KEYS = {
   premium: "quimbar-premium-unlocked",
   theme: "quimbar-theme",
-  favoriteFilters: "quimbar-favorite-filters"
+  favoriteFilters: "quimbar-favorite-filters",
+  logo: "quimbar-company-logo",
+  companyName: "quimbar-company-name"
 };
 
 const PREMIUM_ACCESS_KEY = process.env.REACT_APP_PREMIUM_KEY;
@@ -64,10 +66,10 @@ const apiRequest = async (method, path, options = {}) => {
   throw lastError;
 };
 
-// Pestañas principales - ahora Logística y Transportista
+// Pestañas principales - Logística y Transporte
 const TABS = [
   { id: "logistica", label: "Logística", icon: Package },
-  { id: "transportista", label: "Transportista", icon: Truck }
+  { id: "transporte", label: "Transporte", icon: Truck }
 ];
 
 const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 }).format(value || 0);
@@ -84,31 +86,31 @@ const readJSON = (key, fallback) => {
 };
 
 // Columnas para cada sección
-const LOGISTICA_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
-const TRANSPORTISTA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
+const LOGISTICA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
+const TRANSPORTE_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
 
 // Labels de columnas
 const LOGISTICA_COLUMN_LABELS = {
-  fecha: "Fecha",
-  costo: "Costo",
-  carta_porte: "Carta Porte",
-  servicio: "Servicio",
-  shipment: "Shipment",
-  status: "Status",
-  total: "Total",
-  acciones: "Acciones"
+  fecha: "FECHA",
+  costo_t: "COSTO T",
+  transporte: "TRANSPORTE",
+  servicio: "SERVICIO",
+  costo_l: "COSTO L",
+  status: "STATUS",
+  total: "TOTAL",
+  saldo_a_favor: "SALDO A FAVOR",
+  acciones: "ACCIONES"
 };
 
-const TRANSPORTISTA_COLUMN_LABELS = {
-  fecha: "Fecha",
-  costo_t: "Costo T",
-  transporte: "Transporte",
-  servicio: "Servicio",
-  costo_l: "Costo L",
-  status: "Status",
-  total: "Total",
-  saldo_a_favor: "Saldo a Favor",
-  acciones: "Acciones"
+const TRANSPORTE_COLUMN_LABELS = {
+  fecha: "FECHA",
+  costo: "COSTO",
+  carta_porte: "CARTA PORTE",
+  servicio: "SERVICIO",
+  shipment: "SHIPMENT",
+  status: "STATUS",
+  total: "TOTAL",
+  acciones: "ACCIONES"
 };
 
 const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premiumEnabled, isLogistica) => {
@@ -385,6 +387,13 @@ function App() {
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [favoriteFilterInput, setFavoriteFilterInput] = useState("");
   const [showPremiumDashboard, setShowPremiumDashboard] = useState(false);
+  const [activeLogisticaView, setActiveLogisticaView] = useState("cliente");
+  const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || "QUIMBAR");
+  const [clients, setClients] = useState([]);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
+  const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
     showModal: false,
     lastFormat: 'excel',
@@ -399,30 +408,35 @@ function App() {
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
   const isLogistica = activeTab === "logistica";
-  const currentRecords = isLogistica ? logisticaRecords : transportistaRecords;
-  const currentUploads = isLogistica ? logisticaUploads : transportistaUploads;
-  const currentColumns = isLogistica ? LOGISTICA_COLUMNS : TRANSPORTISTA_COLUMNS;
-  const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTISTA_COLUMN_LABELS;
+  const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
+  const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
+  const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
+  const currentColumns = isLogistica ? LOGISTICA_COLUMNS : TRANSPORTE_COLUMNS;
+  const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTE_COLUMN_LABELS;
 
   useEffect(() => localStorage.setItem(STORAGE_KEYS.favoriteFilters, JSON.stringify(favoriteFilters)), [favoriteFilters]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.theme, darkMode ? "dark" : "light"), [darkMode]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.premium, isPremiumUnlocked ? "1" : "0"), [isPremiumUnlocked]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.logo, companyLogo), [companyLogo]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.companyName, companyName), [companyName]);
 
   useEffect(() => {
     const loadFromBackend = async () => {
       const maxAttempts = 8;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes] = await Promise.all([
+          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
             apiRequest("get", "/logistica/records"),
             apiRequest("get", "/logistica/uploads"),
             apiRequest("get", "/transportista/records"),
-            apiRequest("get", "/transportista/uploads")
+            apiRequest("get", "/transportista/uploads"),
+            apiRequest("get", "/clients")
           ]);
           setLogisticaRecords(logRecordsRes.data || []);
           setLogisticaUploads(logUploadsRes.data || []);
           setTransportistaRecords(transRecordsRes.data || []);
           setTransportistaUploads(transUploadsRes.data || []);
+          setClients(clientsRes.data || []);
           setBackendAvailable(true);
           setServerBooting(false);
           return;
@@ -461,16 +475,23 @@ function App() {
     };
   }, [transportistaRecords]);
 
-  const currentTotals = isLogistica ? logisticaTotals : transportistaTotals;
+  const currentTotals = isLogistica ? transportistaTotals : logisticaTotals;
 
   const filteredRecords = useMemo(
     () => applyFilters(currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
     [currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
   );
 
+  const displayedRecords = useMemo(() => {
+    if (isLogistica && activeLogisticaView === "transportista") {
+      return filteredRecords.filter((record) => record.status === "Pendiente");
+    }
+    return filteredRecords;
+  }, [filteredRecords, isLogistica, activeLogisticaView]);
+
   // Analytics para el dashboard premium
   const premiumAnalytics = useMemo(() => {
-    const records = isLogistica ? logisticaRecords : transportistaRecords;
+    const records = isLogistica ? transportistaRecords : logisticaRecords;
     
     const groupedByMonth = records.reduce((acc, record) => {
       const date = new Date(record.fecha || todayISO());
@@ -501,16 +522,18 @@ function App() {
   }, [logisticaRecords, transportistaRecords, isLogistica]);
 
   const reloadBackendData = async () => {
-    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes] = await Promise.all([
+    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
       apiRequest("get", "/logistica/records"),
       apiRequest("get", "/logistica/uploads"),
       apiRequest("get", "/transportista/records"),
-      apiRequest("get", "/transportista/uploads")
+      apiRequest("get", "/transportista/uploads"),
+      apiRequest("get", "/clients")
     ]);
     setLogisticaRecords(logRecordsRes.data || []);
     setLogisticaUploads(logUploadsRes.data || []);
     setTransportistaRecords(transRecordsRes.data || []);
     setTransportistaUploads(transUploadsRes.data || []);
+    setClients(clientsRes.data || []);
   };
 
   const handleSaveRecord = async (data) => {
@@ -518,7 +541,7 @@ function App() {
     try {
       if (!backendAvailable) throw new Error("backend_unavailable");
 
-      const basePath = isLogistica ? "/logistica" : "/transportista";
+      const basePath = activeApiBasePath;
 
       if (selectedRecord) {
         await apiRequest("put", `${basePath}/records/${selectedRecord.id}`, { data });
@@ -542,14 +565,14 @@ function App() {
     if (!isPremiumUnlocked) return showNotice("Borrar registros es Premium", "Premium");
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     await apiRequest("delete", `${basePath}/records/${id}`);
     await reloadBackendData();
     setShowDeleteConfirm(null);
     showNotice("Registro eliminado", "Éxito");
   };
 
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = async (e, sectionOverride = null) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (serverBooting) {
@@ -567,13 +590,13 @@ function App() {
       const formData = new FormData();
       formData.append("file", file);
       
-      const basePath = isLogistica ? "/logistica" : "/transportista";
+      const basePath = sectionOverride || activeApiBasePath;
       const response = await apiRequest("post", `${basePath}/upload-excel`, {
         data: formData,
         headers: { "Content-Type": "multipart/form-data" }
       });
       await reloadBackendData();
-      showNotice(`${response.data?.records_imported || 0} registros importados en ${isLogistica ? "Logística" : "Transportista"}`, "Éxito");
+      showNotice(`${response.data?.records_imported || 0} registros importados en ${basePath === "/transportista" ? "Logística" : "Transporte"}`, "Éxito");
     } catch {
       showNotice("Error al procesar el Excel", "Error");
     } finally {
@@ -584,11 +607,14 @@ function App() {
 
   const handleExportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(isLogistica ? 'Logística' : 'Transportista');
+    const worksheet = workbook.addWorksheet(isLogistica ? 'Logística' : 'Transporte');
 
-    // Filtrar solo registros pendientes para exportación
-    const exportRecords = filteredRecords.filter(r => r.status === "Pendiente");
     const exportColumns = currentColumns.filter((col) => col !== "acciones");
+    const exportRecords = transportExportMode === "total_pendientes"
+      ? []
+      : (transportExportMode === "todas" || isLogistica
+        ? filteredRecords
+        : filteredRecords.filter((r) => r.status === "Pendiente"));
 
     worksheet.columns = exportColumns.map(col => ({
       header: currentColumnLabels[col]?.toUpperCase() || col.toUpperCase(),
@@ -601,7 +627,7 @@ function App() {
     worksheet.mergeCells(`A1:${String.fromCharCode(64 + exportColumns.length)}2`);
 
     const mainHeader = worksheet.getCell('A1');
-    mainHeader.value = exportSettings.empresa;
+    mainHeader.value = companyName || exportSettings.empresa;
     mainHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '3399AA' } };
     mainHeader.font = { name: 'Arial Black', color: { argb: 'FFFFFF' }, size: 20, bold: true };
     mainHeader.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
@@ -615,10 +641,17 @@ function App() {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
     });
 
+    if (companyLogo) {
+      try {
+        const imageId = workbook.addImage({ base64: companyLogo, extension: companyLogo.includes("image/png") ? "png" : "jpeg" });
+        worksheet.addImage(imageId, "A1:B4");
+      } catch (_) {}
+    }
+
     const headerRow = worksheet.getRow(6);
     headerRow.values = exportColumns.map(col => {
       // Para transportista, cambiar "Costo T" a "Costo JAQ-Transport" en exportación
-      if (!isLogistica && col === 'costo_t') return 'COSTO JAQ-TRANSPORT';
+      if (isLogistica && col === 'costo_t') return 'COSTO JAQ-TRANSPORT';
       return currentColumnLabels[col]?.toUpperCase();
     });
 
@@ -633,8 +666,8 @@ function App() {
       const rowData = {};
       exportColumns.forEach(col => {
         const numericCols = isLogistica 
-          ? ['costo', 'total']
-          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          : ['costo', 'total'];
         rowData[col] = numericCols.includes(col)
           ? toNumber(record[col])
           : record[col] || "-";
@@ -645,8 +678,8 @@ function App() {
       exportColumns.forEach((col, index) => {
         const cell = row.getCell(index + 1);
         const numericCols = isLogistica 
-          ? ['costo', 'total']
-          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          : ['costo', 'total'];
         if (numericCols.includes(col)) {
           cell.numFmt = '"$"#,##0.00';
         }
@@ -663,14 +696,14 @@ function App() {
     worksheet.addRow([]);
     const totalRow = worksheet.addRow([]);
     const totalColIndex = exportColumns.length;
-    totalRow.getCell(totalColIndex - 1).value = "TOTAL PENDIENTE";
-    totalRow.getCell(totalColIndex).value = currentTotals.total_pendiente;
+    totalRow.getCell(totalColIndex - 1).value = transportExportMode === "todas" ? "TOTAL GENERAL" : "TOTAL PENDIENTE";
+    totalRow.getCell(totalColIndex).value = transportExportMode === "todas" ? currentTotals.total_general : currentTotals.total_pendiente;
     totalRow.getCell(totalColIndex).numFmt = '"$"#,##0.00';
     totalRow.getCell(totalColIndex).font = { bold: true };
 
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `quimbar_${activeTab}_pendientes_${todayISO()}.xlsx`);
-    showNotice(`Excel de ${isLogistica ? "Logística" : "Transportista"} exportado (solo pendientes)`, "Éxito");
+    saveAs(new Blob([buffer]), `quimbar_${activeTab}_${transportExportMode}_${todayISO()}.xlsx`);
+    showNotice(`Excel de ${isLogistica ? "Logística" : "Transporte"} exportado`, "Éxito");
   };
 
   const exportToPDF = () => {
@@ -678,8 +711,11 @@ function App() {
 
     const doc = new jsPDF();
     
-    // Filtrar solo registros pendientes
-    const exportRecords = filteredRecords.filter(r => r.status === "Pendiente");
+    const exportRecords = transportExportMode === "total_pendientes"
+      ? []
+      : (transportExportMode === "todas" || isLogistica
+        ? filteredRecords
+        : filteredRecords.filter(r => r.status === "Pendiente"));
     const exportColumns = currentColumns.filter((column) => column !== "acciones");
     const PRIMARY_COLOR = [51, 153, 170];
 
@@ -689,7 +725,7 @@ function App() {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
     doc.setTextColor(255, 255, 255);
-    doc.text(exportSettings.empresa, 20, 23);
+    doc.text(companyName || exportSettings.empresa, 20, 23);
 
     doc.setTextColor(100, 116, 139);
     doc.setFontSize(8);
@@ -700,11 +736,11 @@ function App() {
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
     doc.setFont("helvetica", "bold");
-    doc.text(`${exportSettings.tituloReporte} - ${isLogistica ? "LOGÍSTICA" : "TRANSPORTISTA"}`, 14, 46);
+    doc.text(`${exportSettings.tituloReporte} - ${isLogistica ? "LOGÍSTICA" : "TRANSPORTE"}`, 14, 46);
 
     const header = exportColumns.map((column) => {
       // Para transportista, cambiar "Costo T" a "Costo JAQ-Transport"
-      if (!isLogistica && column === 'costo_t') return 'COSTO JAQ-TRANSPORT';
+      if (isLogistica && column === 'costo_t') return 'COSTO JAQ-TRANSPORT';
       return currentColumnLabels[column].toUpperCase();
     });
     
@@ -712,8 +748,8 @@ function App() {
       exportColumns.map((column) => {
         if (column === "fecha") return record.fecha;
         const numericCols = isLogistica 
-          ? ['costo', 'total']
-          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          : ['costo', 'total'];
         if (numericCols.includes(column)) return formatCurrency(record[column]);
         return record[column] || "-";
       })
@@ -750,9 +786,9 @@ function App() {
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
     doc.setFont("helvetica", "bold");
-    doc.text("TOTAL PENDIENTE:", 120, finalY);
+    doc.text(transportExportMode === "todas" ? "TOTAL GENERAL:" : "TOTAL PENDIENTE:", 120, finalY);
     doc.setTextColor(239, 68, 68);
-    doc.text(formatCurrency(currentTotals.total_pendiente), 170, finalY);
+    doc.text(formatCurrency(transportExportMode === "todas" ? currentTotals.total_general : currentTotals.total_pendiente), 170, finalY);
 
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -770,7 +806,7 @@ function App() {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
     await Promise.all(selected.map((record) => apiRequest("put", `${basePath}/records/${record.id}`, { data: { status } })));
     await reloadBackendData();
@@ -782,7 +818,7 @@ function App() {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     await Promise.all(selectedIds.map((id) => apiRequest("delete", `${basePath}/records/${id}`)));
     await reloadBackendData();
     setSelectedIds([]);
@@ -793,7 +829,7 @@ function App() {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
     
     for (const record of selected) {
@@ -814,7 +850,7 @@ function App() {
       return showNotice("Servidor no disponible", "Error");
     }
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     await apiRequest("post", `${basePath}/uploads/${uploadId}/load`);
     await reloadBackendData();
     showNotice("Historial cargado", "Éxito");
@@ -824,7 +860,7 @@ function App() {
   const handleDeleteUploadedFile = async (uploadId) => {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     await apiRequest("delete", `${basePath}/uploads/${uploadId}`);
     await reloadBackendData();
     showNotice("Archivo eliminado del historial", "Éxito");
@@ -842,7 +878,7 @@ function App() {
       return showNotice("Servidor no disponible", "Error");
     }
     
-    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const basePath = activeApiBasePath;
     await Promise.all([
       apiRequest("delete", `${basePath}/records`),
       apiRequest("delete", `${basePath}/uploads`)
@@ -852,13 +888,42 @@ function App() {
     setStatusFilter("Todos");
     setSelectedIds([]);
     setClearingAll(false);
-    showNotice(`Todos los datos de ${isLogistica ? "Logística" : "Transportista"} fueron eliminados`, "Éxito");
+    showNotice(`Todos los datos de ${isLogistica ? "Logística" : "Transporte"} fueron eliminados`, "Éxito");
   };
 
   const handleSaveFavoriteFilter = () => {
     if (!isPremiumUnlocked) return showNotice("Guardar filtros favoritos es Premium", "Premium");
     setFavoriteFilterInput("");
     setShowFavoriteFilterModal(true);
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setCompanyLogo(reader.result);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleInsertEmptyRow = async () => {
+    if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
+    const basePath = activeApiBasePath;
+    const payload = isLogistica
+      ? { fecha: todayISO(), costo_t: 0, transporte: "", servicio: "", costo_l: 0, status: "Pendiente", saldo_a_favor: 0 }
+      : { fecha: todayISO(), costo: 0, carta_porte: "", servicio: "", shipment: "", status: "Pendiente" };
+    await apiRequest("post", `${basePath}/records`, { data: payload });
+    await reloadBackendData();
+    showNotice("Fila vacía insertada", "Éxito");
+  };
+
+  const handleCreateClient = async () => {
+    if (!clientForm.nombre.trim()) return showNotice("El nombre del cliente es obligatorio", "Error");
+    await apiRequest("post", "/clients", { data: clientForm });
+    setClientForm({ nombre: "", correo: "", telefono: "" });
+    setShowClientModal(false);
+    await reloadBackendData();
+    showNotice("Cliente registrado", "Éxito");
   };
 
   const confirmSaveFavoriteFilter = () => {
@@ -887,22 +952,37 @@ function App() {
       <header className="app-header">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Sistema de Quimbar</h1>
+            <div className="flex items-center gap-3">
+              {companyLogo ? <img src={companyLogo} alt="Logo empresa" className="h-10 w-10 object-contain rounded" /> : null}
+              <h1 className="text-2xl font-bold text-slate-900">{companyName || "Sistema de Quimbar"}</h1>
+            </div>
             <p className="text-sm text-slate-500">
               {serverBooting
                 ? "Iniciando servidor..."
                 : backendAvailable
                   ? "Conectado al servidor"
-                  : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transportista"}
+                  : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transporte"}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className="btn-primary cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" disabled={uploading} />
+              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
               {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
-              Subir Excel ({isLogistica ? "Logística" : "Transportista"})
+              Subir Asap Logística
+            </label>
+            <label className="btn-secondary cursor-pointer">
+              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+              <UploadSimple size={20} />
+              Subir Transportistas
+            </label>
+            <label className="btn-secondary cursor-pointer">
+              <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+              <UploadSimple size={20} />
+              Logo
             </label>
             <button onClick={() => setExportSettings(prev => ({ ...prev, showModal: true }))} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
+            <button onClick={() => setShowClientModal(true)} className="btn-secondary"><Plus size={18} />Cliente</button>
+            <button onClick={handleInsertEmptyRow} className="btn-secondary"><Plus size={18} />Fila vacía</button>
             <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
             <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
             <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
@@ -924,6 +1004,13 @@ function App() {
             </button>
           ))}
         </div>
+
+        {isLogistica && (
+          <div className="flex gap-2 mb-4">
+            <button className={`filter-chip ${activeLogisticaView === "cliente" ? "active" : ""}`} onClick={() => setActiveLogisticaView("cliente")}>Vista Cliente</button>
+            <button className={`filter-chip ${activeLogisticaView === "transportista" ? "active" : ""}`} onClick={() => setActiveLogisticaView("transportista")}>Vista Transportista</button>
+          </div>
+        )}
 
         {/* Selector móvil de sección */}
         <div className="md:hidden mb-4">
@@ -971,7 +1058,7 @@ function App() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white">Configurar Exportación</h3>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{isLogistica ? "Logística" : "Transportista"} - Solo Pendientes</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{isLogistica ? "Logística" : "Transporte"}</p>
                 </div>
               </div>
 
@@ -1002,9 +1089,19 @@ function App() {
                   </div>
                 </div>
 
+                {!isLogistica && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Exportación Transporte</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button type="button" onClick={() => setTransportExportMode("pendientes")} className={`btn-secondary ${transportExportMode === "pendientes" ? "ring-2 ring-blue-500" : ""}`}>Solo Pendientes</button>
+                      <button type="button" onClick={() => setTransportExportMode("total_pendientes")} className={`btn-secondary ${transportExportMode === "total_pendientes" ? "ring-2 ring-blue-500" : ""}`}>Total Pendientes</button>
+                      <button type="button" onClick={() => setTransportExportMode("todas")} className={`btn-secondary ${transportExportMode === "todas" ? "ring-2 ring-blue-500" : ""}`}>Todas las Columnas</button>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Empresa</label>
-                  <input className="form-input w-full" value={exportSettings.empresa} onChange={(e) => setExportSettings({ ...exportSettings, empresa: e.target.value.toUpperCase() })} />
+                  <input className="form-input w-full" value={companyName} onChange={(e) => setCompanyName(e.target.value.toUpperCase())} />
                 </div>
 
                 <div>
@@ -1059,7 +1156,7 @@ function App() {
 
         {/* Barra de búsqueda y filtros */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
-          <p className="text-sm text-slate-500">{currentRecords.length} registros en {isLogistica ? "Logística" : "Transportista"}</p>
+          <p className="text-sm text-slate-500">{currentRecords.length} registros en {isLogistica ? "Logística" : "Transporte"}</p>
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="search-input-wrapper">
               <MagnifyingGlass size={18} className="text-slate-400" />
@@ -1084,7 +1181,7 @@ function App() {
                 <div>
                   <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
                     <ChartLine size={36} weight="duotone" className="text-blue-600" />
-                    Dashboard {isLogistica ? "Logística" : "Transportista"}
+                    Dashboard {isLogistica ? "Logística" : "Transporte"}
                   </h2>
                 </div>
                 <button onClick={() => setShowPremiumDashboard(false)} className="p-3 hover:bg-slate-100 rounded-full">
@@ -1156,7 +1253,7 @@ function App() {
         {/* Historial de archivos subidos */}
         <div className="upload-history mb-6">
           <div className="upload-history-header">
-            <h3><ClockCounterClockwise size={18} /> Historial de archivos - {isLogistica ? "Logística" : "Transportista"}</h3>
+            <h3><ClockCounterClockwise size={18} /> Historial de archivos - {isLogistica ? "Logística" : "Transporte"}</h3>
           </div>
           {currentUploads.length === 0 ? (
             <p className="upload-history-empty">Aún no has subido archivos en esta sección.</p>
@@ -1184,7 +1281,7 @@ function App() {
         <div className="table-container">
           {loading ? (
             <div className="empty-state"><SpinnerGap className="spinner inline-block" size={32} /><p className="mt-2">Cargando...</p></div>
-          ) : filteredRecords.length === 0 ? (
+          ) : displayedRecords.length === 0 ? (
             <div className="empty-state"><Warning size={48} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-medium">No hay registros</p></div>
           ) : (
             <div className="table-scroll">
@@ -1194,8 +1291,8 @@ function App() {
                     {isPremiumUnlocked && <th></th>}
                     {currentColumns.map((column) => {
                       const numericCols = isLogistica 
-                        ? ["costo", "total"]
-                        : ["costo_t", "costo_l", "total", "saldo_a_favor"];
+                        ? ["costo_t", "costo_l", "total", "saldo_a_favor"]
+                        : ["costo", "total"];
                       const centerCol = column === "acciones";
                       return (
                         <th key={column} className={numericCols.includes(column) ? "text-right" : centerCol ? "text-center" : ""}>
@@ -1206,7 +1303,7 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecords.map((record) => (
+                  {displayedRecords.map((record) => (
                     <tr key={record.id} className={selectedIds.includes(record.id) ? "row-selected" : ""}>
                       {isPremiumUnlocked && (
                         <td>
@@ -1222,19 +1319,6 @@ function App() {
                       {isLogistica && (
                         <>
                           {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                          {currentColumns.includes("costo") && <td className="text-right tabular-nums">{formatCurrency(record.costo)}</td>}
-                          {currentColumns.includes("carta_porte") && <td>{record.carta_porte || "-"}</td>}
-                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
-                          {currentColumns.includes("shipment") && <td>{record.shipment || "-"}</td>}
-                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
-                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
-                        </>
-                      )}
-                      
-                      {/* Columnas de Transportista */}
-                      {!isLogistica && (
-                        <>
-                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
                           {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
                           {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
                           {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
@@ -1242,6 +1326,19 @@ function App() {
                           {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
                           {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
                           {currentColumns.includes("saldo_a_favor") && <td className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>}
+                        </>
+                      )}
+                      
+                      {/* Columnas de Transporte */}
+                      {!isLogistica && (
+                        <>
+                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
+                          {currentColumns.includes("costo") && <td className="text-right tabular-nums">{formatCurrency(record.costo)}</td>}
+                          {currentColumns.includes("carta_porte") && <td>{record.carta_porte || "-"}</td>}
+                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
+                          {currentColumns.includes("shipment") && <td>{record.shipment || "-"}</td>}
+                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
+                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
                         </>
                       )}
                       
@@ -1282,12 +1379,12 @@ function App() {
           <div className="dialog-overlay" onClick={() => { setShowForm(false); setSelectedRecord(null); }} />
           <div className="dialog-content">
             <h2 className="text-xl font-bold text-slate-900 mb-6">
-              {selectedRecord ? "Editar Registro" : "Nuevo Registro"} - {isLogistica ? "Logística" : "Transportista"}
+              {selectedRecord ? "Editar Registro" : "Nuevo Registro"} - {isLogistica ? "Logística" : "Transporte"}
             </h2>
             {isLogistica ? (
-              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
-            ) : (
               <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+            ) : (
+              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
             )}
           </div>
         </>
@@ -1335,7 +1432,7 @@ function App() {
         <>
           <div className="dialog-overlay" onClick={() => setShowClearAllConfirm(false)} />
           <div className="dialog-content">
-            <h2 className="text-xl font-bold text-slate-900 mb-4">¿Borrar todos los datos de {isLogistica ? "Logística" : "Transportista"}?</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-4">¿Borrar todos los datos de {isLogistica ? "Logística" : "Transporte"}?</h2>
             <p className="text-sm text-slate-500 mb-4">Se eliminarán todos los registros y el historial de archivos.</p>
             <div className="flex gap-3">
               <button className="btn-danger flex-1" onClick={confirmClearAllData}>Borrar todo</button>
@@ -1355,6 +1452,26 @@ function App() {
             <div className="flex gap-3 mt-4">
               <button className="btn-primary flex-1" onClick={confirmSaveFavoriteFilter}>Guardar</button>
               <button className="btn-secondary" onClick={() => setShowFavoriteFilterModal(false)}>Cancelar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de aviso */}
+      {showClientModal && (
+        <>
+          <div className="dialog-overlay" onClick={() => setShowClientModal(false)} />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-4">Registrar Cliente</h2>
+            <div className="space-y-3">
+              <input className="form-input w-full" placeholder="Nombre" value={clientForm.nombre} onChange={(e) => setClientForm((prev) => ({ ...prev, nombre: e.target.value }))} />
+              <input className="form-input w-full" placeholder="Correo" value={clientForm.correo} onChange={(e) => setClientForm((prev) => ({ ...prev, correo: e.target.value }))} />
+              <input className="form-input w-full" placeholder="Teléfono" value={clientForm.telefono} onChange={(e) => setClientForm((prev) => ({ ...prev, telefono: e.target.value }))} />
+              <p className="text-xs text-slate-500">Clientes registrados: {clients.length}</p>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button className="btn-primary flex-1" onClick={handleCreateClient}>Guardar</button>
+              <button className="btn-secondary" onClick={() => setShowClientModal(false)}>Cancelar</button>
             </div>
           </div>
         </>

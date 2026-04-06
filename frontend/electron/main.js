@@ -2,13 +2,13 @@ const { app, BrowserWindow, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const crypto = require('crypto'); // Módulo nativo para desencriptar
-const { machineIdSync } = require('node-machine-id'); // Librería para el ID único
+const crypto = require('crypto');
+const { machineIdSync } = require('node-machine-id');
 
 const isDev = !app.isPackaged;
 
-// --- CONFIGURACIÓN DE LICENCIA (EL CANDADO) ---
-const SECRET_KEY = 'TuClavePrivadaQuimbar2026'; // DEBE SER LA MISMA QUE USES EN EL GENERADOR
+// --- CONFIGURACIÓN DE LICENCIA ---
+const SECRET_KEY = 'TuClavePrivadaQuimbar2026';
 const ALGORITHM = 'aes-256-cbc';
 const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionCruces');
 const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
@@ -16,33 +16,106 @@ const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
 let backendProcess = null;
 let backendStartupIssue = '';
 
-/**
- * LÓGICA DE DESENCRIPTACIÓN Y VALIDACIÓN
- * Esta función es la que provoca el acceso o el bloqueo.
- */
-function verificarLicenciaActiva(hwID) {
-    if (!fs.existsSync(LICENSE_PATH)) return false;
+function encryptLicensePayload(payload, hwID) {
+  const iv = crypto.randomBytes(16);
+  const key = crypto.scryptSync(SECRET_KEY, hwID, 32);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(JSON.stringify(payload), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return `${iv.toString('hex')}:${encrypted}`;
+}
 
-    try {
-        const contenido = fs.readFileSync(LICENSE_PATH, 'utf8');
-        const [ivHex, encryptedText] = contenido.split(':');
-        
-        if (!ivHex || !encryptedText) return false;
+function decryptLicensePayload(hwID) {
+  if (!fs.existsSync(LICENSE_PATH)) return null;
+  try {
+    const contenido = fs.readFileSync(LICENSE_PATH, 'utf8');
+    const [ivHex, encryptedText] = contenido.split(':');
+    if (!ivHex || !encryptedText) return null;
+    const iv = Buffer.from(ivHex, 'hex');
+    const key = crypto.scryptSync(SECRET_KEY, hwID, 32);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return JSON.parse(decrypted);
+  } catch (error) {
+    console.error('Fallo en desencriptación:', error.message);
+    return null;
+  }
+}
 
-        const iv = Buffer.from(ivHex, 'hex');
-        // Creamos la llave usando tu Secret Key + el ID de la PC del cliente
-        const key = crypto.scryptSync(SECRET_KEY, hwID, 32);
-        const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-        
-        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
+function addTwoMonths(dateInput) {
+  const base = new Date(dateInput);
+  const d = new Date(base);
+  d.setMonth(d.getMonth() + 2);
+  return d;
+}
 
-        // Solo si el texto desencriptado es exactamente este, se libera la app
-        return decrypted === 'LICENCIA_ACTIVA_QUIMBAR'; 
-    } catch (error) {
-        console.error("Fallo en desencriptación:", error.message);
-        return false;
+function validateToken(token) {
+  if (!token?.startsWith('QBM.')) return { valid: false, reason: 'Formato inválido' };
+  const parts = token.split('.');
+  if (parts.length !== 3) return { valid: false, reason: 'Formato inválido' };
+  const expiryCompact = parts[1];
+  const signature = parts[2];
+  const expected = crypto.createHmac('sha256', SECRET_KEY).update(expiryCompact).digest('hex').slice(0, 12);
+  if (expected !== signature) return { valid: false, reason: 'Firma inválida' };
+  const expiryDate = new Date(`${expiryCompact.slice(0, 4)}-${expiryCompact.slice(4, 6)}-${expiryCompact.slice(6, 8)}T23:59:59Z`);
+  if (Number.isNaN(expiryDate.getTime())) return { valid: false, reason: 'Fecha inválida' };
+  if (new Date() > expiryDate) return { valid: false, reason: 'Token caducado' };
+  return { valid: true, expiryDate };
+}
+
+function showTokenPrompt(message) {
+  return new Promise((resolve) => {
+    const tokenWindow = new BrowserWindow({
+      width: 520,
+      height: 340,
+      resizable: false,
+      modal: true,
+      show: true,
+      webPreferences: { nodeIntegration: true, contextIsolation: false },
+    });
+    const html = `
+      <html><body style="font-family:sans-serif;padding:24px;">
+      <h2>Licencia requerida</h2>
+      <p>${message}</p>
+      <p>Su token ha caducado. Por favor, contacte al soporte para renovar su suscripción.</p>
+      <input id="token" style="width:100%;padding:10px;margin-top:12px;" placeholder="Ingrese nuevo token"/>
+      <button id="save" style="margin-top:12px;padding:10px 14px;">Activar token</button>
+      <script>
+      const {ipcRenderer} = require('electron');
+      document.getElementById('save').onclick = () => ipcRenderer.send('license-token-submitted', document.getElementById('token').value || '');
+      </script></body></html>`;
+    tokenWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const { ipcMain } = require('electron');
+    ipcMain.once('license-token-submitted', (_, token) => {
+      tokenWindow.close();
+      resolve((token || '').trim());
+    });
+  });
+}
+
+async function ensureActiveLicense(hwID) {
+  const saved = decryptLicensePayload(hwID);
+  if (saved?.token) {
+    const tokenStatus = validateToken(saved.token);
+    if (tokenStatus.valid) {
+      const activatedAt = saved.activated_at ? new Date(saved.activated_at) : new Date();
+      if (new Date() <= addTwoMonths(activatedAt)) return { valid: true, token: saved.token };
     }
+  }
+
+  const enteredToken = await showTokenPrompt('La licencia no está activa o venció.');
+  const checked = validateToken(enteredToken);
+  if (!checked.valid) return { valid: false, reason: checked.reason };
+
+  if (!fs.existsSync(LICENSE_FOLDER)) fs.mkdirSync(LICENSE_FOLDER, { recursive: true });
+  const payload = {
+    token: enteredToken,
+    activated_at: new Date().toISOString(),
+    expires_at: addTwoMonths(new Date()).toISOString(),
+  };
+  fs.writeFileSync(LICENSE_PATH, encryptLicensePayload(payload, hwID), 'utf8');
+  return { valid: true, token: enteredToken };
 }
 
 // --- LÓGICA DEL BACKEND ---
@@ -65,7 +138,7 @@ function startBackend() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     cwd: path.dirname(backendExecutablePath),
-    env: process.env,
+    env: { ...process.env, QUIMBAR_LICENSE_TOKEN: process.env.QUIMBAR_LICENSE_TOKEN || '' },
   });
 
   backendProcess.once('error', (error) => {
@@ -129,15 +202,14 @@ app.whenReady().then(async () => {
   // 1. OBTENER LA IDENTIDAD DE LA PC
   const hwID = machineIdSync();
 
-  // 2. VERIFICAR LA LICENCIA (Paso provocado por la huella de hardware)
-  if (!verificarLicenciaActiva(hwID)) {
-    dialog.showErrorBox(
-      'Software no activado o vencido',
-      `Esta copia de Quimbar requiere activación.\n\nHardware ID: ${hwID}\n\nEnvía este código al administrador para obtener tu licencia.`
-    );
+  // 2. VERIFICAR TOKEN Y CADUCIDAD BIMESTRAL
+  const license = await ensureActiveLicense(hwID);
+  if (!license.valid) {
+    dialog.showErrorBox('Licencia inválida', `No fue posible activar la licencia.\n\nDetalle: ${license.reason || 'Token inválido.'}`);
     app.quit();
     return;
   }
+  process.env.QUIMBAR_LICENSE_TOKEN = license.token;
 
   // 3. SI LA LICENCIA ES VÁLIDA, SE ACTIVA EL BACKEND
   startBackend();
