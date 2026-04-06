@@ -3,13 +3,12 @@ import "@/App.css";
 import axios from "axios";
 import ExcelJS from 'exceljs';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
   Files,
   Truck,
-  Users,
+  Package,
   PencilSimple,
   Plus,
   Trash,
@@ -31,11 +30,8 @@ import {
   ArrowsClockwise,
   Download,
   Copy,
-  CalendarBlank,
-  Bell,
   ChartLine
 } from "@phosphor-icons/react";
-import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { saveAs } from "file-saver";
@@ -68,11 +64,10 @@ const apiRequest = async (method, path, options = {}) => {
   throw lastError;
 };
 
+// Pestañas principales - ahora Logística y Transportista
 const TABS = [
-  { id: "principal", label: "Archivo Principal", icon: Files },
-  { id: "transporte", label: "Transporte", icon: Truck },
-  { id: "cliente", label: "Cliente", icon: Users },
-  { id: "gestion", label: "Gestión", icon: PencilSimple }
+  { id: "logistica", label: "Logística", icon: Package },
+  { id: "transportista", label: "Transportista", icon: Truck }
 ];
 
 const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 }).format(value || 0);
@@ -88,48 +83,65 @@ const readJSON = (key, fallback) => {
   }
 };
 
-const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premiumEnabled) => {
+// Columnas para cada sección
+const LOGISTICA_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
+const TRANSPORTISTA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
+
+// Labels de columnas
+const LOGISTICA_COLUMN_LABELS = {
+  fecha: "Fecha",
+  costo: "Costo",
+  carta_porte: "Carta Porte",
+  servicio: "Servicio",
+  shipment: "Shipment",
+  status: "Status",
+  total: "Total",
+  acciones: "Acciones"
+};
+
+const TRANSPORTISTA_COLUMN_LABELS = {
+  fecha: "Fecha",
+  costo_t: "Costo T",
+  transporte: "Transporte",
+  servicio: "Servicio",
+  costo_l: "Costo L",
+  status: "Status",
+  total: "Total",
+  saldo_a_favor: "Saldo a Favor",
+  acciones: "Acciones"
+};
+
+const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premiumEnabled, isLogistica) => {
   const normalizedSearch = searchTerm.trim().toLowerCase();
   return records.filter((record) => {
     const matchesStatus = statusFilter === "Todos" || record.status === statusFilter;
-    const matchesSearch =
-      !normalizedSearch ||
-      [record.fecha, record.transportista, record.servicio, record.status].some((field) =>
-        String(field || "").toLowerCase().includes(normalizedSearch)
-      );
+    
+    const searchFields = isLogistica 
+      ? [record.fecha, record.carta_porte, record.servicio, record.shipment, record.status]
+      : [record.fecha, record.transporte, record.servicio, record.status];
+    
+    const matchesSearch = !normalizedSearch || searchFields.some((field) =>
+      String(field || "").toLowerCase().includes(normalizedSearch)
+    );
 
     if (!premiumEnabled) return matchesStatus && matchesSearch;
 
     const dateOk =
       (!premiumFilters.from || new Date(record.fecha) >= new Date(premiumFilters.from)) &&
       (!premiumFilters.to || new Date(record.fecha) <= new Date(premiumFilters.to));
-    const transportistaOk = !premiumFilters.transportista || (record.transportista || "").toLowerCase().includes(premiumFilters.transportista.toLowerCase());
+    
+    const fieldOk = isLogistica 
+      ? (!premiumFilters.field || (record.carta_porte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.shipment || "").toLowerCase().includes(premiumFilters.field.toLowerCase()))
+      : (!premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()));
+    
     const servicioOk = !premiumFilters.servicio || (record.servicio || "").toLowerCase().includes(premiumFilters.servicio.toLowerCase());
     const premiumStatusOk = !premiumFilters.status || premiumFilters.status === "Todos" || record.status === premiumFilters.status;
 
-    return matchesStatus && matchesSearch && dateOk && transportistaOk && servicioOk && premiumStatusOk;
+    return matchesStatus && matchesSearch && dateOk && fieldOk && servicioOk && premiumStatusOk;
   });
 };
 
 const StatusBadge = ({ status }) => <span className={status === "Pagado" ? "badge-paid" : "badge-pending"}>{status}</span>;
-
-const TAB_COLUMNS = {
-  principal: ["fecha", "costo_t", "transportista", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"],
-  transporte: ["fecha", "costo_t", "transportista", "servicio"],
-  cliente: ["fecha", "servicio", "costo_l", "status"]
-};
-
-const COLUMN_LABELS = {
-  fecha: "Fecha",
-  costo_t: "Costo T",
-  transportista: "Transportista",
-  servicio: "Servicio",
-  costo_l: "Costo L",
-  status: "Status",
-  total: "Total",
-  saldo_a_favor: "Saldo a favor",
-  acciones: "Acciones"
-};
 
 const MetricCard = ({ label, value, variant = "default" }) => {
   const colors = { default: "text-slate-900", success: "text-emerald-600", danger: "text-red-600" };
@@ -141,11 +153,98 @@ const MetricCard = ({ label, value, variant = "default" }) => {
   );
 };
 
-const RecordForm = ({ record, onSave, onCancel, loading }) => {
+// Formulario para Logística
+const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
+  const [form, setForm] = useState({
+    fecha: record?.fecha || todayISO(),
+    costo: record?.costo || 0,
+    carta_porte: record?.carta_porte || "",
+    servicio: record?.servicio || "",
+    shipment: record?.shipment || "",
+    status: record?.status || "Pendiente",
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const calculatedTotal = toNumber(form.costo);
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave({
+          ...form,
+          costo: toNumber(form.costo),
+          total: calculatedTotal,
+        });
+      }}
+      className="space-y-4"
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
+          <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Costo</label>
+          <input type="number" name="costo" value={form.costo} onChange={handleChange} className="form-input w-full" step="0.01" min="0" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Carta Porte</label>
+          <input type="text" name="carta_porte" value={form.carta_porte} onChange={handleChange} className="form-input w-full" />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Shipment</label>
+          <input type="text" name="shipment" value={form.shipment} onChange={handleChange} className="form-input w-full" />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-1 text-slate-700">Servicio</label>
+        <input type="text" name="servicio" value={form.servicio} onChange={handleChange} className="form-input w-full" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Status</label>
+          <select name="status" value={form.status} onChange={handleChange} className="form-input w-full">
+            <option value="Pendiente">Pendiente</option>
+            <option value="Pagado">Pagado</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Total</label>
+          <div className="form-input w-full bg-slate-100 tabular-nums font-medium text-slate-600">
+            {formatCurrency(calculatedTotal)}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-4">
+        <button type="submit" className="btn-primary flex-1" disabled={loading}>
+          {loading ? <SpinnerGap className="spinner" size={20} /> : <Plus size={20} />}
+          {record ? "Actualizar" : "Guardar"}
+        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary">
+          <X size={20} />Cancelar
+        </button>
+      </div>
+    </form>
+  );
+};
+
+// Formulario para Transportista
+const TransportistaForm = ({ record, onSave, onCancel, loading }) => {
   const [form, setForm] = useState({
     fecha: record?.fecha || todayISO(),
     costo_t: record?.costo_t || 0,
-    transportista: record?.transportista || "",
+    transporte: record?.transporte || "",
     servicio: record?.servicio || "",
     costo_l: record?.costo_l || 0,
     status: record?.status || "Pendiente",
@@ -156,88 +255,47 @@ const RecordForm = ({ record, onSave, onCancel, loading }) => {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-
   const calculatedTotal = toNumber(form.costo_l);
   const calculatedSaldo = calculatedTotal - toNumber(form.costo_t);
-
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        // Al enviar, usamos los valores ya calculados en el cuerpo del componente
         onSave({
           ...form,
           costo_t: toNumber(form.costo_t),
           costo_l: toNumber(form.costo_l),
-          total: calculatedTotal, // Asegura que Total = Costo L
-          saldo_a_favor: calculatedSaldo, // Asegura que Saldo = L - T
+          total: calculatedTotal,
+          saldo_a_favor: calculatedSaldo,
         });
       }}
       className="space-y-4"
     >
-      {/* Fecha y Transportista */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
-          <input
-            type="date"
-            name="fecha"
-            value={form.fecha}
-            onChange={handleChange}
-            className="form-input w-full"
-            required
-          />
+          <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
         </div>
         <div>
-          <label className="block text-sm font-semibold mb-1 text-slate-700">Transportista</label>
-          <input
-            type="text"
-            name="transportista"
-            value={form.transportista}
-            onChange={handleChange}
-            className="form-input w-full"
-          />
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Transporte</label>
+          <input type="text" name="transporte" value={form.transporte} onChange={handleChange} className="form-input w-full" />
         </div>
       </div>
 
-      {/* Servicio/Cliente */}
       <div>
-        <label className="block text-sm font-semibold mb-1 text-slate-700">Servicio/Cliente</label>
-        <input
-          type="text"
-          name="servicio"
-          value={form.servicio}
-          onChange={handleChange}
-          className="form-input w-full"
-        />
+        <label className="block text-sm font-semibold mb-1 text-slate-700">Servicio</label>
+        <input type="text" name="servicio" value={form.servicio} onChange={handleChange} className="form-input w-full" />
       </div>
 
-      {/* Costos y Total */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Costo T</label>
-          <input
-            type="number"
-            name="costo_t"
-            value={form.costo_t}
-            onChange={handleChange}
-            className="form-input w-full"
-            step="0.01"
-            min="0"
-          />
+          <input type="number" name="costo_t" value={form.costo_t} onChange={handleChange} className="form-input w-full" step="0.01" min="0" />
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Costo L</label>
-          <input
-            type="number"
-            name="costo_l"
-            value={form.costo_l}
-            onChange={handleChange}
-            className="form-input w-full"
-            step="0.01"
-            min="0"
-          />
+          <input type="number" name="costo_l" value={form.costo_l} onChange={handleChange} className="form-input w-full" step="0.01" min="0" />
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Total (Costo L)</label>
@@ -247,16 +305,10 @@ const RecordForm = ({ record, onSave, onCancel, loading }) => {
         </div>
       </div>
 
-      {/* Status y Saldo a Favor */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Status</label>
-          <select
-            name="status"
-            value={form.status}
-            onChange={handleChange}
-            className="form-input w-full"
-          >
+          <select name="status" value={form.status} onChange={handleChange} className="form-input w-full">
             <option value="Pendiente">Pendiente</option>
             <option value="Pagado">Pagado</option>
           </select>
@@ -269,23 +321,13 @@ const RecordForm = ({ record, onSave, onCancel, loading }) => {
         </div>
       </div>
 
-      {/* Acciones */}
       <div className="flex gap-3 pt-4">
-        <button
-          type="submit"
-          className="btn-primary flex-1"
-          disabled={loading}
-        >
+        <button type="submit" className="btn-primary flex-1" disabled={loading}>
           {loading ? <SpinnerGap className="spinner" size={20} /> : <Plus size={20} />}
-          {record ? "Actualizar Registro" : "Guardar Registro"}
+          {record ? "Actualizar" : "Guardar"}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="btn-secondary"
-        >
-          <X size={20} />
-          Cancelar
+        <button type="button" onClick={onCancel} className="btn-secondary">
+          <X size={20} />Cancelar
         </button>
       </div>
     </form>
@@ -309,9 +351,16 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 function App() {
-  const [activeTab, setActiveTab] = useState("principal");
-  const [records, setRecords] = useState([]);
-  const [uploads, setUploads] = useState([]);
+  const [activeTab, setActiveTab] = useState("logistica");
+  
+  // Estados separados para Logística
+  const [logisticaRecords, setLogisticaRecords] = useState([]);
+  const [logisticaUploads, setLogisticaUploads] = useState([]);
+  
+  // Estados separados para Transportista
+  const [transportistaRecords, setTransportistaRecords] = useState([]);
+  const [transportistaUploads, setTransportistaUploads] = useState([]);
+  
   const [favoriteFilters, setFavoriteFilters] = useState(() => readJSON(STORAGE_KEYS.favoriteFilters, []));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -327,7 +376,7 @@ function App() {
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => localStorage.getItem(STORAGE_KEYS.premium) === "1");
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumKeyInput, setPremiumKeyInput] = useState("");
-  const [premiumFilters, setPremiumFilters] = useState({ from: "", to: "", transportista: "", servicio: "", status: "Todos" });
+  const [premiumFilters, setPremiumFilters] = useState({ from: "", to: "", field: "", servicio: "", status: "Todos" });
   const [selectedIds, setSelectedIds] = useState([]);
   const [serverBooting, setServerBooting] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(false);
@@ -349,6 +398,12 @@ function App() {
 
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
+  const isLogistica = activeTab === "logistica";
+  const currentRecords = isLogistica ? logisticaRecords : transportistaRecords;
+  const currentUploads = isLogistica ? logisticaUploads : transportistaUploads;
+  const currentColumns = isLogistica ? LOGISTICA_COLUMNS : TRANSPORTISTA_COLUMNS;
+  const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTISTA_COLUMN_LABELS;
+
   useEffect(() => localStorage.setItem(STORAGE_KEYS.favoriteFilters, JSON.stringify(favoriteFilters)), [favoriteFilters]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.theme, darkMode ? "dark" : "light"), [darkMode]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.premium, isPremiumUnlocked ? "1" : "0"), [isPremiumUnlocked]);
@@ -358,9 +413,16 @@ function App() {
       const maxAttempts = 8;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const [recordsRes, uploadsRes] = await Promise.all([apiRequest("get", "/records"), apiRequest("get", "/uploads")]);
-          setRecords(recordsRes.data || []);
-          setUploads(uploadsRes.data || []);
+          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes] = await Promise.all([
+            apiRequest("get", "/logistica/records"),
+            apiRequest("get", "/logistica/uploads"),
+            apiRequest("get", "/transportista/records"),
+            apiRequest("get", "/transportista/uploads")
+          ]);
+          setLogisticaRecords(logRecordsRes.data || []);
+          setLogisticaUploads(logUploadsRes.data || []);
+          setTransportistaRecords(transRecordsRes.data || []);
+          setTransportistaUploads(transUploadsRes.data || []);
           setBackendAvailable(true);
           setServerBooting(false);
           return;
@@ -370,34 +432,46 @@ function App() {
       }
       setBackendAvailable(false);
       setServerBooting(false);
-      showNotice("No se pudo conectar con quimbar-server.exe. Reinicia la app.", "Error");
+      showNotice("No se pudo conectar con el servidor. Reinicia la app.", "Error");
     };
     loadFromBackend();
   }, []);
 
-  const totals = useMemo(() => {
-    const total_pendiente = records.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_pagado = records.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_costo_l_pendiente = records.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.costo_l), 0);
-    const total_general = total_pendiente + total_pagado;
-    const total_saldo_a_favor = records.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
+  // Totales para Logística
+  const logisticaTotals = useMemo(() => {
+    const total_pendiente = logisticaRecords.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_pagado = logisticaRecords.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
     return {
       total_pendiente,
       total_pagado,
-      total_costo_l_pendiente,
-      total_general,
+      total_general: total_pendiente + total_pagado
+    };
+  }, [logisticaRecords]);
+
+  // Totales para Transportista
+  const transportistaTotals = useMemo(() => {
+    const total_pendiente = transportistaRecords.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_pagado = transportistaRecords.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_saldo_a_favor = transportistaRecords.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
+    return {
+      total_pendiente,
+      total_pagado,
+      total_general: total_pendiente + total_pagado,
       total_saldo_a_favor
     };
-  }, [records]);
+  }, [transportistaRecords]);
+
+  const currentTotals = isLogistica ? logisticaTotals : transportistaTotals;
 
   const filteredRecords = useMemo(
-    () => applyFilters(records, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked),
-    [records, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked]
+    () => applyFilters(currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
+    [currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
   );
-  const currentColumns = TAB_COLUMNS[activeTab] || TAB_COLUMNS.principal;
 
+  // Analytics para el dashboard premium
   const premiumAnalytics = useMemo(() => {
-    // 1. AGRUPACIÓN POR MES (Flujo Mensual)
+    const records = isLogistica ? logisticaRecords : transportistaRecords;
+    
     const groupedByMonth = records.reduce((acc, record) => {
       const date = new Date(record.fecha || todayISO());
       const key = date.toLocaleDateString("es-MX", { month: 'short', year: '2-digit' }).toUpperCase();
@@ -413,70 +487,30 @@ function App() {
       .sort((a, b) => a.fullDate - b.fullDate)
       .slice(-6);
 
-    // 2. TOPS (Transportistas y Clientes)
-    const topTransportistas = Object.entries(
+    const topItems = Object.entries(
       records.reduce((acc, r) => {
-        const key = (r.transportista || "Sin transportista").trim();
+        const key = isLogistica 
+          ? (r.servicio || "Sin servicio").trim()
+          : (r.transporte || "Sin transporte").trim();
         acc[key] = (acc[key] || 0) + toNumber(r.total);
         return acc;
       }, {})
-    ).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    ).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    const topClientes = Object.entries(
-      records.reduce((acc, r) => {
-        const key = (r.servicio || "Sin cliente").trim();
-        acc[key] = (acc[key] || 0) + toNumber(r.costo_l);
-        return acc;
-      }, {})
-    ).sort((a, b) => b[1] - a[1]).slice(0, 3);
-
-    // --- NUEVA SECCIÓN: ANÁLISIS DE MÁRGENES (Utility Analysis) ---
-    const totalCostoT = records.reduce((sum, r) => sum + toNumber(r.costo_t), 0);
-    const totalCostoL = records.reduce((sum, r) => sum + toNumber(r.costo_l), 0);
-    const margenUtilidad = totalCostoL - totalCostoT;
-    const porcentajeMargen = totalCostoL > 0 ? (margenUtilidad / totalCostoL) * 100 : 0;
-
-    // --- NUEVA SECCIÓN: PRONÓSTICO DE INGRESOS (Upcoming Cashflow) ---
-    const hoy = new Date();
-    const limiteProximo = new Date();
-    limiteProximo.setDate(hoy.getDate() + 7); // Miramos 7 días hacia adelante
-
-    const upcomingCashflow = records
-      .filter(r => {
-        const fechaRec = new Date(r.fecha);
-        return r.status === "Pendiente" && fechaRec <= limiteProximo;
-      })
-      .sort((a, b) => toNumber(b.total) - toNumber(a.total))
-      .slice(0, 3);
-
-    const totalEsperado = upcomingCashflow.reduce((sum, r) => sum + toNumber(r.total), 0);
-
-    // 3. ALERTAS Y ESTADOS
-    const overdue = records.filter(r =>
-      r.status === "Pendiente" &&
-      (Date.now() - new Date(r.fecha).getTime()) / (1000 * 60 * 60 * 24) > 30
-    );
-
-    return {
-      monthData: sortedMonths,
-      topTransportistas,
-      topClientes,
-      overdue,
-      incomplete: records.filter(r => !r.transportista || !r.servicio),
-      // Exportamos las nuevas métricas
-      margenUtilidad,
-      porcentajeMargen,
-      totalCostoT,
-      totalCostoL,
-      upcomingCashflow,
-      totalEsperado
-    };
-  }, [records]);
+    return { monthData: sortedMonths, topItems };
+  }, [logisticaRecords, transportistaRecords, isLogistica]);
 
   const reloadBackendData = async () => {
-    const [recordsRes, uploadsRes] = await Promise.all([apiRequest("get", "/records"), apiRequest("get", "/uploads")]);
-    setRecords(recordsRes.data || []);
-    setUploads(uploadsRes.data || []);
+    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes] = await Promise.all([
+      apiRequest("get", "/logistica/records"),
+      apiRequest("get", "/logistica/uploads"),
+      apiRequest("get", "/transportista/records"),
+      apiRequest("get", "/transportista/uploads")
+    ]);
+    setLogisticaRecords(logRecordsRes.data || []);
+    setLogisticaUploads(logUploadsRes.data || []);
+    setTransportistaRecords(transRecordsRes.data || []);
+    setTransportistaUploads(transUploadsRes.data || []);
   };
 
   const handleSaveRecord = async (data) => {
@@ -484,11 +518,12 @@ function App() {
     try {
       if (!backendAvailable) throw new Error("backend_unavailable");
 
-      if (selectedRecord) {
+      const basePath = isLogistica ? "/logistica" : "/transportista";
 
-        await apiRequest("put", `/records/${selectedRecord.id}`, { data });
+      if (selectedRecord) {
+        await apiRequest("put", `${basePath}/records/${selectedRecord.id}`, { data });
       } else {
-        await apiRequest("post", "/records", { data });
+        await apiRequest("post", `${basePath}/records`, { data });
       }
 
       await reloadBackendData();
@@ -506,7 +541,9 @@ function App() {
   const handleDeleteRecord = async (id) => {
     if (!isPremiumUnlocked) return showNotice("Borrar registros es Premium", "Premium");
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    await apiRequest("delete", `/records/${id}`);
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    await apiRequest("delete", `${basePath}/records/${id}`);
     await reloadBackendData();
     setShowDeleteConfirm(null);
     showNotice("Registro eliminado", "Éxito");
@@ -521,7 +558,7 @@ function App() {
       return;
     }
     if (!backendAvailable) {
-      showNotice("No se detectó quimbar-server.exe en ejecución.", "Error");
+      showNotice("No se detectó el servidor en ejecución.", "Error");
       e.target.value = "";
       return;
     }
@@ -529,12 +566,14 @@ function App() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await apiRequest("post", "/upload-excel", {
+      
+      const basePath = isLogistica ? "/logistica" : "/transportista";
+      const response = await apiRequest("post", `${basePath}/upload-excel`, {
         data: formData,
         headers: { "Content-Type": "multipart/form-data" }
       });
       await reloadBackendData();
-      showNotice(`${response.data?.records_imported || 0} registros importados`, "Éxito");
+      showNotice(`${response.data?.records_imported || 0} registros importados en ${isLogistica ? "Logística" : "Transportista"}`, "Éxito");
     } catch {
       showNotice("Error al procesar el Excel", "Error");
     } finally {
@@ -545,19 +584,18 @@ function App() {
 
   const handleExportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(TABS.find(t => t.id === activeTab)?.label || 'Reporte');
+    const worksheet = workbook.addWorksheet(isLogistica ? 'Logística' : 'Transportista');
 
-    // 1. Obtener columnas dinámicas según la pestaña (excluyendo acciones)
+    // Filtrar solo registros pendientes para exportación
+    const exportRecords = filteredRecords.filter(r => r.status === "Pendiente");
     const exportColumns = currentColumns.filter((col) => col !== "acciones");
 
-    // Configurar las columnas en ExcelJS
     worksheet.columns = exportColumns.map(col => ({
-      header: COLUMN_LABELS[col]?.toUpperCase() || col.toUpperCase(),
+      header: currentColumnLabels[col]?.toUpperCase() || col.toUpperCase(),
       key: col,
-      width: col === 'servicio' ? 45 : col === 'transportista' ? 25 : 15
+      width: col === 'servicio' ? 45 : col === 'transporte' ? 25 : 15
     }));
 
-    // 2. DISEÑO DE CABECERA (JAQ TRANSPORT LOGISTIC / Datos del Modal)
     worksheet.insertRow(1, []);
     worksheet.insertRow(2, []);
     worksheet.mergeCells(`A1:${String.fromCharCode(64 + exportColumns.length)}2`);
@@ -568,7 +606,6 @@ function App() {
     mainHeader.font = { name: 'Arial Black', color: { argb: 'FFFFFF' }, size: 20, bold: true };
     mainHeader.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
 
-    // Sub-cabeceras (Dirección, Teléfono, etc.)
     worksheet.getRow(3).values = [exportSettings.direccion, '', '', exportSettings.telefono, '', exportSettings.correo];
     worksheet.getRow(4).values = [exportSettings.ubicacion];
 
@@ -578,9 +615,12 @@ function App() {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F1F5F9' } };
     });
 
-    // 3. ENCABEZADOS DE TABLA (Fila 6)
     const headerRow = worksheet.getRow(6);
-    headerRow.values = exportColumns.map(col => COLUMN_LABELS[col]?.toUpperCase());
+    headerRow.values = exportColumns.map(col => {
+      // Para transportista, cambiar "Costo T" a "Costo JAQ-Transport" en exportación
+      if (!isLogistica && col === 'costo_t') return 'COSTO JAQ-TRANSPORT';
+      return currentColumnLabels[col]?.toUpperCase();
+    });
 
     headerRow.eachCell((cell) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2E8F0' } };
@@ -589,21 +629,25 @@ function App() {
       cell.alignment = { horizontal: 'center' };
     });
 
-    // 4. AGREGAR DATOS FILTRADOS
-    filteredRecords.forEach(record => {
+    exportRecords.forEach(record => {
       const rowData = {};
       exportColumns.forEach(col => {
-        rowData[col] = (['costo_t', 'costo_l', 'total', 'saldo_a_favor'].includes(col))
+        const numericCols = isLogistica 
+          ? ['costo', 'total']
+          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+        rowData[col] = numericCols.includes(col)
           ? toNumber(record[col])
           : record[col] || "-";
       });
 
       const row = worksheet.addRow(rowData);
 
-      // Estilos por celda (Moneda y Status)
       exportColumns.forEach((col, index) => {
         const cell = row.getCell(index + 1);
-        if (['costo_t', 'costo_l', 'total', 'saldo_a_favor'].includes(col)) {
+        const numericCols = isLogistica 
+          ? ['costo', 'total']
+          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+        if (numericCols.includes(col)) {
           cell.numFmt = '"$"#,##0.00';
         }
         if (col === 'status') {
@@ -615,33 +659,27 @@ function App() {
       });
     });
 
-    // 5. TOTALES AL FINAL (Lógica por pestaña)
-    if (activeTab === "cliente") {
-      worksheet.addRow([]);
-      const totalRow = worksheet.addRow([]);
-      totalRow.getCell(exportColumns.indexOf('servicio') + 1).value = "TOTAL PENDIENTE";
-      totalRow.getCell(exportColumns.indexOf('costo_l') + 1).value = totals.total_costo_l_pendiente;
-      totalRow.getCell(exportColumns.indexOf('costo_l') + 1).numFmt = '"$"#,##0.00';
-      totalRow.getCell(exportColumns.indexOf('costo_l') + 1).font = { bold: true };
-    } else if (activeTab === "principal") {
-      worksheet.addRow([]);
-      const totalRow = worksheet.addRow([]);
-      totalRow.getCell(exportColumns.length - 1).value = "TOTAL PENDIENTE";
-      totalRow.getCell(exportColumns.length).value = totals.total_pendiente;
-      totalRow.getCell(exportColumns.length).numFmt = '"$"#,##0.00';
-      totalRow.getCell(exportColumns.length).font = { bold: true };
-    }
+    // Totales al final
+    worksheet.addRow([]);
+    const totalRow = worksheet.addRow([]);
+    const totalColIndex = exportColumns.length;
+    totalRow.getCell(totalColIndex - 1).value = "TOTAL PENDIENTE";
+    totalRow.getCell(totalColIndex).value = currentTotals.total_pendiente;
+    totalRow.getCell(totalColIndex).numFmt = '"$"#,##0.00';
+    totalRow.getCell(totalColIndex).font = { bold: true };
 
-    // 6. DESCARGA
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `quimbar_${activeTab}_${todayISO()}.xlsx`);
-    showNotice(`Excel de ${activeTab} exportado`, "Éxito");
+    saveAs(new Blob([buffer]), `quimbar_${activeTab}_pendientes_${todayISO()}.xlsx`);
+    showNotice(`Excel de ${isLogistica ? "Logística" : "Transportista"} exportado (solo pendientes)`, "Éxito");
   };
 
   const exportToPDF = () => {
     if (!isPremiumUnlocked) return showNotice("Exportar PDF es Premium", "Premium");
 
     const doc = new jsPDF();
+    
+    // Filtrar solo registros pendientes
+    const exportRecords = filteredRecords.filter(r => r.status === "Pendiente");
     const exportColumns = currentColumns.filter((column) => column !== "acciones");
     const PRIMARY_COLOR = [51, 153, 170];
 
@@ -662,13 +700,21 @@ function App() {
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
     doc.setFont("helvetica", "bold");
-    doc.text(exportSettings.tituloReporte, 14, 46);
+    doc.text(`${exportSettings.tituloReporte} - ${isLogistica ? "LOGÍSTICA" : "TRANSPORTISTA"}`, 14, 46);
 
-    const header = exportColumns.map((column) => COLUMN_LABELS[column].toUpperCase());
-    const body = filteredRecords.map((record) => (
+    const header = exportColumns.map((column) => {
+      // Para transportista, cambiar "Costo T" a "Costo JAQ-Transport"
+      if (!isLogistica && column === 'costo_t') return 'COSTO JAQ-TRANSPORT';
+      return currentColumnLabels[column].toUpperCase();
+    });
+    
+    const body = exportRecords.map((record) => (
       exportColumns.map((column) => {
         if (column === "fecha") return record.fecha;
-        if (["costo_t", "costo_l", "total", "saldo_a_favor"].includes(column)) return formatCurrency(record[column]);
+        const numericCols = isLogistica 
+          ? ['costo', 'total']
+          : ['costo_t', 'costo_l', 'total', 'saldo_a_favor'];
+        if (numericCols.includes(column)) return formatCurrency(record[column]);
         return record[column] || "-";
       })
     ));
@@ -703,18 +749,10 @@ function App() {
     const finalY = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(10);
     doc.setTextColor(30, 41, 59);
-
-    if (activeTab === "cliente") {
-      doc.setFont("helvetica", "bold");
-      doc.text("TOTAL PENDIENTE:", 120, finalY);
-      doc.setTextColor(239, 68, 68);
-      doc.text(formatCurrency(totals.total_costo_l_pendiente), 170, finalY);
-    } else if (activeTab === "principal") {
-      doc.setFont("helvetica", "bold");
-      doc.text("TOTAL PENDIENTE:", 120, finalY);
-      doc.setTextColor(239, 68, 68);
-      doc.text(formatCurrency(totals.total_pendiente), 170, finalY);
-    }
+    doc.setFont("helvetica", "bold");
+    doc.text("TOTAL PENDIENTE:", 120, finalY);
+    doc.setTextColor(239, 68, 68);
+    doc.text(formatCurrency(currentTotals.total_pendiente), 170, finalY);
 
     const pageCount = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
@@ -724,43 +762,47 @@ function App() {
       doc.text(`Página ${i} de ${pageCount} - Generado el ${todayISO()}`, 14, doc.internal.pageSize.height - 10);
     }
 
-    doc.save(`quimbar_reporte_${activeTab}_${todayISO()}.pdf`);
-    showNotice("PDF exportado con diseño", "Éxito");
+    doc.save(`quimbar_${activeTab}_pendientes_${todayISO()}.pdf`);
+    showNotice("PDF exportado (solo pendientes)", "Éxito");
   };
 
   const handleMassStatusChange = async (status) => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    const selected = records.filter((r) => selectedIds.includes(r.id));
-    await Promise.all(selected.map((record) => apiRequest("put", `/records/${record.id}`, { data: { status } })));
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
+    await Promise.all(selected.map((record) => apiRequest("put", `${basePath}/records/${record.id}`, { data: { status } })));
     await reloadBackendData();
+    setSelectedIds([]);
     showNotice(`Se actualizaron ${selectedIds.length} registros`, "Éxito");
   };
 
   const handleMassDelete = async () => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    await Promise.all(selectedIds.map((id) => apiRequest("delete", `/records/${id}`)));
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    await Promise.all(selectedIds.map((id) => apiRequest("delete", `${basePath}/records/${id}`)));
     await reloadBackendData();
     setSelectedIds([]);
-    showNotice("Registros eliminados por lote", "Éxito");
+    showNotice("Registros eliminados", "Éxito");
   };
 
   const handleMassDuplicate = async () => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    const selected = records.filter((r) => selectedIds.includes(r.id));
-    await Promise.all(selected.map((record) => apiRequest("post", "/records", {
-      data: {
-        fecha: record.fecha,
-        costo_t: record.costo_t,
-        transportista: record.transportista,
-        servicio: record.servicio,
-        costo_l: record.costo_l,
-        status: record.status,
-        saldo_a_favor: record.saldo_a_favor
-      }
-    })));
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
+    
+    for (const record of selected) {
+      const newRecord = isLogistica 
+        ? { fecha: record.fecha, costo: record.costo, carta_porte: record.carta_porte, servicio: record.servicio, shipment: record.shipment, status: record.status }
+        : { fecha: record.fecha, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status };
+      await apiRequest("post", `${basePath}/records`, { data: newRecord });
+    }
+    
     await reloadBackendData();
     showNotice(`${selected.length} registros duplicados`, "Éxito");
   };
@@ -771,7 +813,9 @@ function App() {
       setLoadingUploadId(null);
       return showNotice("Servidor no disponible", "Error");
     }
-    await apiRequest("post", `/uploads/${uploadId}/load`);
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    await apiRequest("post", `${basePath}/uploads/${uploadId}/load`);
     await reloadBackendData();
     showNotice("Historial cargado", "Éxito");
     setLoadingUploadId(null);
@@ -779,7 +823,9 @@ function App() {
 
   const handleDeleteUploadedFile = async (uploadId) => {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    await apiRequest("delete", `/uploads/${uploadId}`);
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    await apiRequest("delete", `${basePath}/uploads/${uploadId}`);
     await reloadBackendData();
     showNotice("Archivo eliminado del historial", "Éxito");
   };
@@ -795,14 +841,18 @@ function App() {
       setClearingAll(false);
       return showNotice("Servidor no disponible", "Error");
     }
-    await Promise.all([apiRequest("delete", "/records"), apiRequest("delete", "/uploads")]);
+    
+    const basePath = isLogistica ? "/logistica" : "/transportista";
+    await Promise.all([
+      apiRequest("delete", `${basePath}/records`),
+      apiRequest("delete", `${basePath}/uploads`)
+    ]);
     await reloadBackendData();
-    setFavoriteFilters([]);
     setSearchTerm("");
     setStatusFilter("Todos");
     setSelectedIds([]);
     setClearingAll(false);
-    showNotice("Todos los datos fueron eliminados", "Éxito");
+    showNotice(`Todos los datos de ${isLogistica ? "Logística" : "Transportista"} fueron eliminados`, "Éxito");
   };
 
   const handleSaveFavoriteFilter = () => {
@@ -821,7 +871,13 @@ function App() {
   };
 
   const handleExportBackup = () => {
-    const payload = { version: 1, exported_at: new Date().toISOString(), records, uploads, favoriteFilters };
+    const payload = { 
+      version: 1, 
+      exported_at: new Date().toISOString(), 
+      logistica: { records: logisticaRecords, uploads: logisticaUploads },
+      transportista: { records: transportistaRecords, uploads: transportistaUploads },
+      favoriteFilters 
+    };
     saveAs(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `quimbar_backup_${todayISO()}.json`);
     showNotice("Backup exportado", "Éxito");
   };
@@ -834,65 +890,78 @@ function App() {
             <h1 className="text-2xl font-bold text-slate-900">Sistema de Quimbar</h1>
             <p className="text-sm text-slate-500">
               {serverBooting
-                ? "Iniciando servidor local en 127.0.0.1:8000..."
+                ? "Iniciando servidor..."
                 : backendAvailable
-                  ? "Conectado a quimbar-server.exe (127.0.0.1:8000)"
-                  : "Error: quimbar-server.exe no disponible"} • Gestión de Registros
+                  ? "Conectado al servidor"
+                  : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transportista"}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className="btn-primary cursor-pointer">
               <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" disabled={uploading} />
-              {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}Subir Excel
+              {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
+              Subir Excel ({isLogistica ? "Logística" : "Transportista"})
             </label>
             <button onClick={() => setExportSettings(prev => ({ ...prev, showModal: true }))} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
             <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
-            <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}{darkMode ? "Tema claro" : "Tema oscuro"}</button>
-            <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium activo" : "Activar Premium"}</button>
+            <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+            <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
           </div>
         </div>
       </header>
 
       <main className="main-content max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        {/* Pestañas principales */}
         <div className="hidden md:flex border-b border-slate-300 mb-6">
           {TABS.map((tab) => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab.id ? "text-[#002FA7] border-[#002FA7]" : "text-slate-500 border-transparent hover:text-slate-700"}`}>
-              <tab.icon size={20} />
+            <button 
+              key={tab.id} 
+              onClick={() => { setActiveTab(tab.id); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }} 
+              className={`flex items-center gap-2 px-6 py-4 text-sm font-bold transition-colors border-b-2 -mb-px ${activeTab === tab.id ? "text-[#002FA7] border-[#002FA7] bg-blue-50/50" : "text-slate-500 border-transparent hover:text-slate-700"}`}
+            >
+              <tab.icon size={22} weight={activeTab === tab.id ? "fill" : "regular"} />
               {tab.label}
             </button>
           ))}
         </div>
 
-        {(activeTab === "principal" || activeTab === "cliente") && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {activeTab === "principal" && (
-              <>
-                {/* Estas siempre visibles */}
-                <MetricCard label="Total General" value={totals.total_general} variant="default" />
-                <MetricCard label="Total Pendiente" value={totals.total_pendiente} variant="danger" />
-                <MetricCard label="Total Pagado" value={totals.total_pagado} variant="success" />
+        {/* Selector móvil de sección */}
+        <div className="md:hidden mb-4">
+          <select 
+            value={activeTab} 
+            onChange={(e) => { setActiveTab(e.target.value); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }}
+            className="form-input w-full text-lg font-bold"
+          >
+            {TABS.map((tab) => (
+              <option key={tab.id} value={tab.id}>{tab.label}</option>
+            ))}
+          </select>
+        </div>
 
-                {/* Esta solo si es Premium */}
-                {isPremiumUnlocked ? (
-                  <MetricCard label="Total Saldo a Favor" value={totals.total_saldo_a_favor} variant="default" />
-                ) : (
-                  <div
-                    className="metric-card flex flex-col items-center justify-center cursor-pointer border-dashed border-2 border-slate-300 opacity-60 hover:opacity-100 transition-opacity"
-                    onClick={() => setShowPremiumModal(true)}
-                  >
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Saldo a Favor</p>
-                    <div className="flex items-center gap-2 text-slate-500">
-                      <Lock size={18} />
-                      <span className="text-sm font-semibold">Desbloquear</span>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            {activeTab === "cliente" && <MetricCard label="Total Pendiente" value={totals.total_costo_l_pendiente} variant="danger" />}
-          </div>
-        )}
+        {/* Métricas */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <MetricCard label="Total General" value={currentTotals.total_general} variant="default" />
+          <MetricCard label="Total Pendiente" value={currentTotals.total_pendiente} variant="danger" />
+          <MetricCard label="Total Pagado" value={currentTotals.total_pagado} variant="success" />
+          {!isLogistica && (
+            isPremiumUnlocked ? (
+              <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
+            ) : (
+              <div
+                className="metric-card flex flex-col items-center justify-center cursor-pointer border-dashed border-2 border-slate-300 opacity-60 hover:opacity-100 transition-opacity"
+                onClick={() => setShowPremiumModal(true)}
+              >
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Saldo a Favor</p>
+                <div className="flex items-center gap-2 text-slate-500">
+                  <Lock size={18} />
+                  <span className="text-sm font-semibold">Desbloquear</span>
+                </div>
+              </div>
+            )
+          )}
+        </div>
 
+        {/* Modal de exportación */}
         {exportSettings.showModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-700">
@@ -902,19 +971,18 @@ function App() {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white">Configurar Exportación</h3>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Personaliza los datos del reporte</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{isLogistica ? "Logística" : "Transportista"} - Solo Pendientes</p>
                 </div>
               </div>
 
               <div className="space-y-4">
-                {/* Selector de Formato con Validación Premium */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Selecciona Formato</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Formato</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setExportSettings({ ...exportSettings, lastFormat: 'excel' })}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'excel' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700' : 'border-slate-100 dark:border-slate-700 text-slate-400'}`}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'excel' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-400'}`}
                     >
                       <FileXls size={20} /> Excel
                     </button>
@@ -922,64 +990,46 @@ function App() {
                       type="button"
                       onClick={() => {
                         if (!isPremiumUnlocked) {
-                          showNotice("La exportación a PDF es una función exclusiva de la versión Premium.", "Opción solo disponible en Premium");
+                          showNotice("PDF es Premium", "Premium");
                         } else {
                           setExportSettings({ ...exportSettings, lastFormat: 'pdf' });
                         }
                       }}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'pdf' ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700' : 'border-slate-100 dark:border-slate-700 text-slate-400'}`}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'pdf' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-100 text-slate-400'}`}
                     >
-                      {!isPremiumUnlocked ? <Lock size={18} className="opacity-60" /> : <FilePdf size={20} />}
-                      PDF
+                      {!isPremiumUnlocked ? <Lock size={18} /> : <FilePdf size={20} />} PDF
                     </button>
                   </div>
                 </div>
 
-                {/* Campos Editables */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Nombre de la Empresa</label>
-                  <input
-                    className="form-input w-full bg-slate-50 dark:bg-slate-900"
-                    value={exportSettings.empresa}
-                    onChange={(e) => setExportSettings({ ...exportSettings, empresa: e.target.value.toUpperCase() })}
-                  />
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Empresa</label>
+                  <input className="form-input w-full" value={exportSettings.empresa} onChange={(e) => setExportSettings({ ...exportSettings, empresa: e.target.value.toUpperCase() })} />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Título/Descripción del Reporte</label>
-                  <input
-                    className="form-input w-full bg-slate-50 dark:bg-slate-900"
-                    value={exportSettings.tituloReporte}
-                    onChange={(e) => setExportSettings({ ...exportSettings, tituloReporte: e.target.value.toUpperCase() })}
-                  />
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Correo</label>
+                  <input className="form-input w-full" value={exportSettings.correo} onChange={(e) => setExportSettings({ ...exportSettings, correo: e.target.value })} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Teléfono</label>
-                    <input
-                      className="form-input w-full bg-slate-50 dark:bg-slate-900"
-                      value={exportSettings.telefono}
-                      onChange={(e) => setExportSettings({ ...exportSettings, telefono: e.target.value })}
-                    />
+                    <input className="form-input w-full" value={exportSettings.telefono} onChange={(e) => setExportSettings({ ...exportSettings, telefono: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Dirección</label>
-                    <input
-                      className="form-input w-full bg-slate-50 dark:bg-slate-900"
-                      value={exportSettings.direccion}
-                      onChange={(e) => setExportSettings({ ...exportSettings, direccion: e.target.value.toUpperCase() })}
-                    />
+                    <input className="form-input w-full" value={exportSettings.direccion} onChange={(e) => setExportSettings({ ...exportSettings, direccion: e.target.value.toUpperCase() })} />
                   </div>
                 </div>
               </div>
 
               <div className="flex gap-3 mt-8">
                 <button
-                  className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-lg transition-transform active:scale-95 ${exportSettings.lastFormat === 'pdf' ? 'bg-red-500 shadow-red-500/20' : 'bg-emerald-500 shadow-emerald-500/20'}`}
+                  className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-lg transition-transform active:scale-95 ${exportSettings.lastFormat === 'pdf' ? 'bg-red-500' : 'bg-emerald-500'}`}
                   onClick={() => {
                     if (exportSettings.lastFormat === 'pdf') {
-                      if (!isPremiumUnlocked) return showNotice("Opción solo disponible en Premium", "Premium");
+                      if (!isPremiumUnlocked) return showNotice("PDF es Premium", "Premium");
                       exportToPDF();
                     } else {
                       handleExportExcel();
@@ -987,12 +1037,9 @@ function App() {
                     setExportSettings(prev => ({ ...prev, showModal: false }));
                   }}
                 >
-                  Generar y Descargar
+                  Descargar
                 </button>
-                <button
-                  className="px-6 rounded-2xl font-bold text-slate-500 bg-slate-100 dark:bg-slate-700"
-                  onClick={() => setExportSettings(prev => ({ ...prev, showModal: false }))}
-                >
+                <button className="px-6 rounded-2xl font-bold text-slate-500 bg-slate-100" onClick={() => setExportSettings(prev => ({ ...prev, showModal: false }))}>
                   <X size={20} />
                 </button>
               </div>
@@ -1000,355 +1047,259 @@ function App() {
           </div>
         )}
 
-        {isPremiumUnlocked && activeTab === "principal" && (
+        {/* Botón Dashboard Premium */}
+        {isPremiumUnlocked && (
           <div className="flex justify-end mb-4">
-            <button
-              onClick={() => setShowPremiumDashboard(true)}
-              className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800"
-            >
+            <button onClick={() => setShowPremiumDashboard(true)} className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800">
               <ChartLine size={20} weight="bold" />
-              Ver Dashboard Avanzado
+              Ver Dashboard
             </button>
           </div>
         )}
 
-        {activeTab !== "gestion" && (
-          <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
-            <p className="text-sm text-slate-500">{records.length} registros</p>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="search-input-wrapper"><MagnifyingGlass size={18} className="text-slate-400" /><input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" /></div>
-              <div className="filter-chip-group">
-                {["Todos", "Pendiente", "Pagado"].map((f) => <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>)}
-              </div>
-              {activeTab === "principal" && <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary"><Plus size={20} />Añadir Registro</button>}
+        {/* Barra de búsqueda y filtros */}
+        <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
+          <p className="text-sm text-slate-500">{currentRecords.length} registros en {isLogistica ? "Logística" : "Transportista"}</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="search-input-wrapper">
+              <MagnifyingGlass size={18} className="text-slate-400" />
+              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
             </div>
-          </div>
-        )}
-
-        {exportSettings.showModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <FileXls size={24} className="text-emerald-600" />
-                Configurar Reporte Excel
-              </h3>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre de la Empresa</label>
-                  <input
-                    className="form-input w-full"
-                    value={exportSettings.empresa}
-                    onChange={(e) => setExportSettings({ ...exportSettings, empresa: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono</label>
-                    <input
-                      className="form-input w-full"
-                      value={exportSettings.telefono}
-                      onChange={(e) => setExportSettings({ ...exportSettings, telefono: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Correo</label>
-                    <input
-                      className="form-input w-full"
-                      value={exportSettings.correo}
-                      onChange={(e) => setExportSettings({ ...exportSettings, correo: e.target.value })}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  className="btn-primary flex-1"
-                  onClick={() => {
-                    if (exportSettings.lastFormat === 'pdf') {
-                      exportToPDF();
-                    } else {
-                      handleExportExcel();
-                    }
-                    setExportSettings(prev => ({ ...prev, showModal: false }));
-                  }}
-                >
-                  Generar {exportSettings.lastFormat === 'pdf' ? 'PDF' : 'Excel'}
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => setExportSettings(prev => ({ ...prev, showModal: false }))}
-                >
-                  Cancelar
-                </button>
-              </div>
+            <div className="filter-chip-group">
+              {["Todos", "Pendiente", "Pagado"].map((f) => (
+                <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
+              ))}
             </div>
+            <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
+              <Plus size={20} />Añadir Registro
+            </button>
           </div>
-        )}
+        </div>
 
+        {/* Dashboard Premium Modal */}
         {showPremiumDashboard && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 dark:border-slate-800">
-
-              {/* Cabecera del Modal */}
+            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
               <div className="flex justify-between items-start mb-8">
                 <div>
                   <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
                     <ChartLine size={36} weight="duotone" className="text-blue-600" />
-                    Panel de Inteligencia Premium
+                    Dashboard {isLogistica ? "Logística" : "Transportista"}
                   </h2>
-                  <p className="text-slate-500 font-medium">Análisis avanzado de operaciones</p>
                 </div>
-                <button onClick={() => setShowPremiumDashboard(false)} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                <button onClick={() => setShowPremiumDashboard(false)} className="p-3 hover:bg-slate-100 rounded-full">
                   <X size={24} weight="bold" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Columna Izquierda: Gráfico y Nuevas Estadísticas */}
-                <div className="lg:col-span-2 space-y-6">
-
-                  {/* Gráfico de Flujo Mensual */}
-                  <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Flujo Mensual</h3>
-                    <div className="h-[300px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={premiumAnalytics.monthData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                          <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} />
-                          <YAxis hide />
-                          <Tooltip content={<CustomTooltip />} />
-                          <Bar dataKey="pagado" stackId="a" fill="#10B981" barSize={40} />
-                          <Bar dataKey="pendiente" stackId="a" fill="#EF4444" radius={[10, 10, 0, 0]} barSize={40} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* --- NUEVA SECCIÓN: GRID DE MÉTRICAS AVANZADAS --- */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                    {/* Card: Margen de Utilidad (Utility Analysis) */}
-                    <div className="bg-slate-50 dark:bg-slate-800/40 p-5 rounded-3xl border border-slate-100 dark:border-slate-700">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Margen de Utilidad</p>
-                          <p className="text-2xl font-bold text-emerald-500">{formatCurrency(premiumAnalytics.margenUtilidad)}</p>
-                        </div>
-                        <div className="bg-emerald-500/10 text-emerald-600 text-xs font-bold px-2 py-1 rounded-lg">
-                          {premiumAnalytics.porcentajeMargen.toFixed(1)}%
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] text-slate-500 font-medium">
-                          <span>COSTO OPERATIVO (T)</span>
-                          <span>{formatCurrency(premiumAnalytics.totalCostoT)}</span>
-                        </div>
-                        <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="bg-slate-400 h-full transition-all duration-700"
-                            style={{ width: `${(premiumAnalytics.totalCostoT / premiumAnalytics.totalCostoL * 100) || 0}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-slate-400 italic mt-2 text-center">
-                          Utilidad basada en la diferencia de Costo L vs Costo T
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Card: Próximos Ingresos (Upcoming Cashflow) */}
-                    <div className="bg-slate-50 dark:bg-slate-800/40 p-5 rounded-3xl border border-slate-100 dark:border-slate-700">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Ingresos Esperados (7D)</p>
-                      <div className="space-y-3">
-                        {premiumAnalytics.upcomingCashflow.length > 0 ? (
-                          premiumAnalytics.upcomingCashflow.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/50 pb-2 last:border-0">
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{item.servicio}</p>
-                                <p className="text-[9px] text-slate-500 uppercase">{formatDate(item.fecha)}</p>
-                              </div>
-                              <p className="text-xs font-bold text-blue-500">{formatCurrency(item.total)}</p>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-xs text-slate-400 italic py-4 text-center">No hay cobros proyectados esta semana.</p>
-                        )}
-                        <div className="pt-2 mt-2 flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">Total Proyectado</span>
-                          <span className="text-base font-black text-blue-600">{formatCurrency(premiumAnalytics.totalEsperado)}</span>
-                        </div>
-                      </div>
-                    </div>
-
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-slate-50 p-6 rounded-3xl">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">Flujo Mensual</h3>
+                  <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={premiumAnalytics.monthData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} />
+                        <YAxis hide />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="pagado" stackId="a" fill="#10B981" barSize={30} />
+                        <Bar dataKey="pendiente" stackId="a" fill="#EF4444" radius={[8, 8, 0, 0]} barSize={30} />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* Columna Derecha: Rankings */}
-                <div className="space-y-6">
-                  <div className="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-800/50">
-                    <h3 className="text-xs font-bold text-emerald-700 dark:text-emerald-500 uppercase tracking-widest mb-4">Top Transportistas</h3>
-                    {premiumAnalytics.topTransportistas.map(([name, total]) => (
-                      <button
-                        key={name}
-                        onClick={() => { setSearchTerm(name); setShowPremiumDashboard(false); }}
-                        className="w-full flex justify-between items-center mb-3 hover:bg-emerald-100/50 dark:hover:bg-emerald-800/30 p-2 rounded-xl transition-all group"
-                      >
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-hover:text-emerald-700">{name}</span>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(total)}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-3xl border border-blue-100 dark:border-blue-800/50">
-                    <h3 className="text-xs font-bold text-blue-700 dark:text-blue-500 uppercase tracking-widest mb-4">Top Clientes (Logística)</h3>
-                    {premiumAnalytics.topClientes.map(([name, total]) => (
-                      <button
-                        key={name}
-                        onClick={() => { setSearchTerm(name); setShowPremiumDashboard(false); }}
-                        className="w-full flex justify-between items-center mb-3 hover:bg-blue-100/50 dark:hover:bg-blue-800/30 p-2 rounded-xl transition-all group"
-                      >
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-hover:text-blue-700">{name}</span>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(total)}</span>
-                      </button>
-                    ))}
-                  </div>
+                <div className="bg-blue-50 p-6 rounded-3xl">
+                  <h3 className="text-xs font-bold text-blue-700 uppercase mb-4">
+                    Top {isLogistica ? "Servicios" : "Transportes"}
+                  </h3>
+                  {premiumAnalytics.topItems.map(([name, total]) => (
+                    <button
+                      key={name}
+                      onClick={() => { setSearchTerm(name); setShowPremiumDashboard(false); }}
+                      className="w-full flex justify-between items-center mb-3 hover:bg-blue-100/50 p-2 rounded-xl"
+                    >
+                      <span className="text-sm font-semibold text-slate-700 truncate">{name}</span>
+                      <span className="text-sm font-bold text-slate-900">{formatCurrency(total)}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {isPremiumUnlocked && activeTab === "principal" && (
+        {/* Filtros Premium */}
+        {isPremiumUnlocked && (
           <div className="premium-toolbar mb-4">
             <div className="premium-filters">
               <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
               <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
-              <input type="text" className="form-input" placeholder="Transportista" value={premiumFilters.transportista} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, transportista: e.target.value }))} />
-              <input type="text" className="form-input" placeholder="Cliente/Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
-              <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar filtro</button>
+              <input type="text" className="form-input" placeholder={isLogistica ? "Carta Porte / Shipment" : "Transporte"} value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
+              <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
+              <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
               <select className="form-input" onChange={(e) => { const f = favoriteFilters.find((x) => x.id === e.target.value); if (f) setPremiumFilters(f.filters); }} defaultValue="">
                 <option value="">Filtros favoritos</option>
                 {favoriteFilters.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
               </select>
             </div>
             <div className="premium-bulk">
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Marcar pagado</button>
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Marcar pendiente</button>
+              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
+              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
               <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
-              <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar lote</button>
+              <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
               <button className="btn-secondary" onClick={handleExportBackup}><Download size={16} />Backup</button>
             </div>
           </div>
         )}
 
-        {activeTab !== "gestion" && (
-          <div className="upload-history mb-6">
-            <div className="upload-history-header"><h3><ClockCounterClockwise size={18} /> Historial de archivos</h3></div>
-            {uploads.length === 0 ? <p className="upload-history-empty">Aún no has subido archivos.</p> : (
-              <div className="upload-history-list">
-                {uploads.map((upload) => (
-                  <div className="upload-history-item" key={upload.id}>
-                    <div>
-                      <p className="upload-history-name">{upload.filename}</p>
-                      <p className="upload-history-meta">{upload.records_count} registros • {formatDate(upload.uploaded_at)}</p>
-                    </div>
-                    <div className="upload-history-actions">
-                      <button className="btn-secondary" onClick={() => handleLoadUploadedFile(upload.id)} disabled={loadingUploadId === upload.id}>{loadingUploadId === upload.id ? <SpinnerGap className="spinner" size={16} /> : <FolderOpen size={16} />}Cargar</button>
-                      <button className="btn-danger" onClick={() => handleDeleteUploadedFile(upload.id)}><TrashSimple size={16} />Borrar</button>
-                    </div>
+        {/* Historial de archivos subidos */}
+        <div className="upload-history mb-6">
+          <div className="upload-history-header">
+            <h3><ClockCounterClockwise size={18} /> Historial de archivos - {isLogistica ? "Logística" : "Transportista"}</h3>
+          </div>
+          {currentUploads.length === 0 ? (
+            <p className="upload-history-empty">Aún no has subido archivos en esta sección.</p>
+          ) : (
+            <div className="upload-history-list">
+              {currentUploads.map((upload) => (
+                <div className="upload-history-item" key={upload.id}>
+                  <div>
+                    <p className="upload-history-name">{upload.filename}</p>
+                    <p className="upload-history-meta">{upload.records_count} registros • {formatDate(upload.uploaded_at)}</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  <div className="upload-history-actions">
+                    <button className="btn-secondary" onClick={() => handleLoadUploadedFile(upload.id)} disabled={loadingUploadId === upload.id}>
+                      {loadingUploadId === upload.id ? <SpinnerGap className="spinner" size={16} /> : <FolderOpen size={16} />}Cargar
+                    </button>
+                    <button className="btn-danger" onClick={() => handleDeleteUploadedFile(upload.id)}><TrashSimple size={16} />Borrar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-        {activeTab === "gestion" ? (
-          <div className="table-container p-6"><h2 className="text-xl font-bold text-slate-900 mb-6">{selectedRecord ? "Editar Registro" : "Nuevo Registro"}</h2><RecordForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); setActiveTab("principal"); }} loading={saving} /></div>
-        ) : (
-          <div className="table-container">
-            {loading ? (
-              <div className="empty-state"><SpinnerGap className="spinner inline-block" size={32} /><p className="mt-2">Cargando...</p></div>
-            ) : filteredRecords.length === 0 ? (
-              <div className="empty-state"><Warning size={48} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-medium">No hay registros</p></div>
-            ) : (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {isPremiumUnlocked && activeTab === "principal" && <th></th>}
-                      {currentColumns.map((column) => {
-                        const numericCol = ["costo_t", "costo_l", "total", "saldo_a_favor"].includes(column);
-                        const centerCol = column === "acciones";
-                        return (
-                          <th key={column} className={numericCol ? "text-right" : centerCol ? "text-center" : ""}>
-                            {COLUMN_LABELS[column]}
-                          </th>
-                        );
-                      })}
+        {/* Tabla de registros */}
+        <div className="table-container">
+          {loading ? (
+            <div className="empty-state"><SpinnerGap className="spinner inline-block" size={32} /><p className="mt-2">Cargando...</p></div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="empty-state"><Warning size={48} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-medium">No hay registros</p></div>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {isPremiumUnlocked && <th></th>}
+                    {currentColumns.map((column) => {
+                      const numericCols = isLogistica 
+                        ? ["costo", "total"]
+                        : ["costo_t", "costo_l", "total", "saldo_a_favor"];
+                      const centerCol = column === "acciones";
+                      return (
+                        <th key={column} className={numericCols.includes(column) ? "text-right" : centerCol ? "text-center" : ""}>
+                          {currentColumnLabels[column]}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((record) => (
+                    <tr key={record.id} className={selectedIds.includes(record.id) ? "row-selected" : ""}>
+                      {isPremiumUnlocked && (
+                        <td>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedIds.includes(record.id)} 
+                            onChange={() => setSelectedIds((prev) => prev.includes(record.id) ? prev.filter((id) => id !== record.id) : [...prev, record.id])} 
+                          />
+                        </td>
+                      )}
+                      
+                      {/* Columnas de Logística */}
+                      {isLogistica && (
+                        <>
+                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
+                          {currentColumns.includes("costo") && <td className="text-right tabular-nums">{formatCurrency(record.costo)}</td>}
+                          {currentColumns.includes("carta_porte") && <td>{record.carta_porte || "-"}</td>}
+                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
+                          {currentColumns.includes("shipment") && <td>{record.shipment || "-"}</td>}
+                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
+                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
+                        </>
+                      )}
+                      
+                      {/* Columnas de Transportista */}
+                      {!isLogistica && (
+                        <>
+                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
+                          {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
+                          {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
+                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
+                          {currentColumns.includes("costo_l") && <td className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>}
+                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
+                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
+                          {currentColumns.includes("saldo_a_favor") && <td className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>}
+                        </>
+                      )}
+                      
+                      {currentColumns.includes("acciones") && (
+                        <td className="text-center">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => { if (!isPremiumUnlocked) return; setSelectedRecord(record); setShowForm(true); }}
+                              className="p-1 hover:bg-slate-100 rounded disabled:opacity-40"
+                              disabled={!isPremiumUnlocked}
+                              title={isPremiumUnlocked ? "Editar" : "Premium"}
+                            >
+                              <PencilSimple size={18} />
+                            </button>
+                            <button
+                              onClick={() => { if (!isPremiumUnlocked) return; setShowDeleteConfirm(record.id); }}
+                              className="p-1 hover:bg-red-50 rounded disabled:opacity-40"
+                              disabled={!isPremiumUnlocked}
+                              title={isPremiumUnlocked ? "Eliminar" : "Premium"}
+                            >
+                              <Trash size={18} className="text-red-500" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRecords.map((record) => (
-                      <tr key={record.id} className={selectedIds.includes(record.id) ? "row-selected" : ""}>
-                        {isPremiumUnlocked && activeTab === "principal" && <td><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => setSelectedIds((prev) => (prev.includes(record.id) ? prev.filter((id) => id !== record.id) : [...prev, record.id]))} /></td>}
-                        {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                        {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
-                        {currentColumns.includes("transportista") && <td>{record.transportista || "-"}</td>}
-                        {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
-                        {currentColumns.includes("costo_l") && <td className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>}
-                        {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
-                        {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
-                        {currentColumns.includes("saldo_a_favor") && <td className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>}
-                        {currentColumns.includes("acciones") && (
-                          <td className="text-center">
-                            <div className="flex justify-center gap-2">
-                              <button
-                                onClick={() => { if (!isPremiumUnlocked) return; setSelectedRecord(record); setShowForm(true); }}
-                                className="p-1 hover:bg-slate-100 rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                                disabled={!isPremiumUnlocked}
-                                title={isPremiumUnlocked ? "Editar registro" : "Disponible solo en Premium"}
-                              >
-                                <PencilSimple size={18} />
-                              </button>
-                              <button
-                                onClick={() => { if (!isPremiumUnlocked) return; setShowDeleteConfirm(record.id); }}
-                                className="p-1 hover:bg-red-50 rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                                disabled={!isPremiumUnlocked}
-                                title={isPremiumUnlocked ? "Eliminar registro" : "Disponible solo en Premium"}
-                              >
-                                <Trash size={18} className="text-red-500" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </main>
 
-      {showForm && activeTab !== "gestion" && (
+      {/* Modal de formulario */}
+      {showForm && (
         <>
           <div className="dialog-overlay" onClick={() => { setShowForm(false); setSelectedRecord(null); }} />
           <div className="dialog-content">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">{selectedRecord ? "Editar Registro" : "Nuevo Registro"}</h2>
-            <RecordForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+            <h2 className="text-xl font-bold text-slate-900 mb-6">
+              {selectedRecord ? "Editar Registro" : "Nuevo Registro"} - {isLogistica ? "Logística" : "Transportista"}
+            </h2>
+            {isLogistica ? (
+              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+            ) : (
+              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+            )}
           </div>
         </>
       )}
 
+      {/* Modal Premium */}
       {showPremiumModal && (
         <>
           <div className="dialog-overlay" onClick={() => setShowPremiumModal(false)} />
           <div className="dialog-content">
             <h2 className="text-xl font-bold text-slate-900 mb-2">Activar Premium</h2>
-            <p className="text-sm text-slate-500 mb-4">Incluye filtros pro, dashboard, alertas, edición masiva y backup avanzado.</p>
+            <p className="text-sm text-slate-500 mb-4">Filtros avanzados, dashboard, edición y backup.</p>
             <input type="password" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Clave Premium" />
             <div className="flex gap-3 mt-4">
               <button className="btn-primary flex-1" onClick={() => {
@@ -1364,74 +1315,59 @@ function App() {
         </>
       )}
 
+      {/* Modal de confirmación de borrar */}
       {showDeleteConfirm && (
         <>
           <div className="dialog-overlay" onClick={() => setShowDeleteConfirm(null)} />
-          <div className="dialog-content text-center">
-            <Warning size={48} className="mx-auto text-red-500 mb-4" />
-            <h3 className="text-lg font-bold text-slate-900 mb-2">¿Eliminar registro?</h3>
-            <p className="text-slate-500 mb-6">Esta acción no se puede deshacer.</p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => handleDeleteRecord(showDeleteConfirm)} className="btn-danger"><Trash size={20} />Eliminar</button>
-              <button onClick={() => setShowDeleteConfirm(null)} className="btn-secondary">Cancelar</button>
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-4">¿Eliminar registro?</h2>
+            <p className="text-sm text-slate-500 mb-4">Esta acción no se puede deshacer.</p>
+            <div className="flex gap-3">
+              <button className="btn-danger flex-1" onClick={() => handleDeleteRecord(showDeleteConfirm)}>Eliminar</button>
+              <button className="btn-secondary" onClick={() => setShowDeleteConfirm(null)}>Cancelar</button>
             </div>
           </div>
         </>
       )}
 
+      {/* Modal de confirmación borrar todo */}
       {showClearAllConfirm && (
         <>
           <div className="dialog-overlay" onClick={() => setShowClearAllConfirm(false)} />
-          <div className="dialog-content text-center">
-            <Warning size={48} className="mx-auto text-red-500 mb-4" />
-            <h3 className="text-lg font-bold text-slate-900 mb-2">¿Borrar todos los datos?</h3>
-            <p className="text-slate-500 mb-6">Se eliminarán todos los registros e historial de archivos.</p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={confirmClearAllData} className="btn-danger"><Trash size={20} />Sí, borrar todo</button>
-              <button onClick={() => setShowClearAllConfirm(false)} className="btn-secondary">Cancelar</button>
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-4">¿Borrar todos los datos de {isLogistica ? "Logística" : "Transportista"}?</h2>
+            <p className="text-sm text-slate-500 mb-4">Se eliminarán todos los registros y el historial de archivos.</p>
+            <div className="flex gap-3">
+              <button className="btn-danger flex-1" onClick={confirmClearAllData}>Borrar todo</button>
+              <button className="btn-secondary" onClick={() => setShowClearAllConfirm(false)}>Cancelar</button>
             </div>
           </div>
         </>
       )}
 
+      {/* Modal filtro favorito */}
       {showFavoriteFilterModal && (
         <>
           <div className="dialog-overlay" onClick={() => setShowFavoriteFilterModal(false)} />
           <div className="dialog-content">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Guardar filtro favorito</h3>
-            <p className="text-slate-500 mb-4">Escribe un nombre para identificar este filtro.</p>
-            <input
-              className="form-input w-full"
-              value={favoriteFilterInput}
-              onChange={(e) => setFavoriteFilterInput(e.target.value)}
-              placeholder="Ej. Pendientes de abril"
-            />
-            <div className="flex gap-3 justify-end mt-4">
-              <button onClick={() => setShowFavoriteFilterModal(false)} className="btn-secondary">Cancelar</button>
-              <button onClick={confirmSaveFavoriteFilter} className="btn-primary">Guardar</button>
+            <h2 className="text-xl font-bold text-slate-900 mb-4">Guardar filtro favorito</h2>
+            <input type="text" value={favoriteFilterInput} onChange={(e) => setFavoriteFilterInput(e.target.value)} className="form-input w-full" placeholder="Nombre del filtro" />
+            <div className="flex gap-3 mt-4">
+              <button className="btn-primary flex-1" onClick={confirmSaveFavoriteFilter}>Guardar</button>
+              <button className="btn-secondary" onClick={() => setShowFavoriteFilterModal(false)}>Cancelar</button>
             </div>
           </div>
         </>
       )}
 
+      {/* Modal de aviso */}
       {noticeModal.open && (
         <>
-          {/* Agregamos z-[200] para que tape el modal de exportación */}
-          <div
-            className="dialog-overlay !z-[200]"
-            onClick={() => setNoticeModal({ open: false, title: "", message: "" })}
-          />
-
-          {/* Agregamos z-[201] para que el contenido esté por encima del overlay */}
-          <div className="dialog-content text-center !z-[201]">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">{noticeModal.title}</h3>
-            <p className="text-slate-600 mb-6">{noticeModal.message}</p>
-            <button
-              className="btn-primary w-full justify-center"
-              onClick={() => setNoticeModal({ open: false, title: "", message: "" })}
-            >
-              Aceptar
-            </button>
+          <div className="dialog-overlay" onClick={() => setNoticeModal({ open: false, title: "", message: "" })} />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">{noticeModal.title}</h2>
+            <p className="text-sm text-slate-500 mb-4">{noticeModal.message}</p>
+            <button className="btn-primary w-full" onClick={() => setNoticeModal({ open: false, title: "", message: "" })}>Aceptar</button>
           </div>
         </>
       )}
