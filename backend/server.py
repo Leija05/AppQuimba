@@ -1,6 +1,7 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
+from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 import os
 import logging
 from pathlib import Path
@@ -12,6 +13,8 @@ from io import BytesIO
 import asyncio
 import json
 import re
+import hmac
+import hashlib
 import openpyxl
 import uvicorn
 
@@ -25,6 +28,7 @@ LOGISTICA_RECORDS_FILE = DATA_DIR / "logistica_records.json"
 TRANSPORTISTA_RECORDS_FILE = DATA_DIR / "transportista_records.json"
 LOGISTICA_UPLOADS_FILE = DATA_DIR / "logistica_uploads.json"
 TRANSPORTISTA_UPLOADS_FILE = DATA_DIR / "transportista_uploads.json"
+CLIENTS_FILE = DATA_DIR / "clients.json"
 
 # Legacy files for migration
 RECORDS_FILE = DATA_DIR / "records.json"
@@ -38,12 +42,25 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+
+@app.middleware("http")
+async def enforce_license(request: Request, call_next):
+    if request.url.path in {"/api/license/verify"} or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
+        return await call_next(request)
+    token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
+    valid, reason = _validate_token(token)
+    if not valid:
+        return JSONResponse(status_code=403, content={"detail": f"Licencia inválida: {reason}"})
+    return await call_next(request)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+LICENSE_SECRET = os.environ.get("QUIMBAR_LICENSE_SECRET", "QuimbarToken2026")
 
 
 # ============== Helper Functions ==============
@@ -126,6 +143,22 @@ def _parse_float(value) -> float:
         return float(cleaned)
     except ValueError:
         return 0.0
+
+
+def _validate_token(token: str) -> tuple[bool, str]:
+    if not token or not token.startswith("QBM."):
+        return False, "Token vacío o formato inválido"
+    try:
+        _, expiry_compact, signature = token.split(".")
+        expiry_date = datetime.strptime(expiry_compact, "%Y%m%d").date()
+        expected = hmac.new(LICENSE_SECRET.encode("utf-8"), f"{expiry_compact}".encode("utf-8"), hashlib.sha256).hexdigest()[:12]
+        if not hmac.compare_digest(expected, signature):
+            return False, "Firma inválida"
+        if datetime.utcnow().date() > expiry_date:
+            return False, "Token caducado"
+        return True, "OK"
+    except Exception:
+        return False, "Token inválido"
 
 
 # ============== Models for LOGISTICA ==============
@@ -217,6 +250,20 @@ class UploadedFileInfo(BaseModel):
     uploaded_at: str
     records_count: int
     section: str = "transportista"
+
+
+class Client(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    nombre: str
+    correo: str = ""
+    telefono: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class ClientCreate(BaseModel):
+    nombre: str
+    correo: str = ""
+    telefono: str = ""
 
 
 # ============== LOGISTICA Routes ==============
@@ -776,6 +823,29 @@ async def delete_all_transportista_uploads():
         deleted_count = len(uploads)
         await save_json(TRANSPORTISTA_UPLOADS_FILE, [])
     return {"message": f"Deleted {deleted_count} uploads"}
+
+
+@api_router.get("/clients", response_model=List[Client])
+async def get_clients():
+    async with _records_lock:
+        return await load_json(CLIENTS_FILE)
+
+
+@api_router.post("/clients", response_model=Client)
+async def create_client(data: ClientCreate):
+    client = Client(nombre=data.nombre, correo=data.correo, telefono=data.telefono)
+    async with _records_lock:
+        clients = await load_json(CLIENTS_FILE)
+        clients.append(client.model_dump())
+        await save_json(CLIENTS_FILE, clients)
+    return client
+
+
+@api_router.get("/license/verify")
+async def verify_license():
+    token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
+    valid, reason = _validate_token(token)
+    return {"valid": valid, "reason": reason}
 
 
 # ============== Legacy/Common Routes ==============
