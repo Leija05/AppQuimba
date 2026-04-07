@@ -896,4 +896,12 @@ async def shutdown_db_client():
 if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    # Evita fallos de formatter en ejecutables Windows (PyInstaller) donde
+    # stdout/stderr pueden no exponer isatty().
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_config=None,
+        access_log=False,
+    )
