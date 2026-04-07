@@ -187,6 +187,7 @@ class LogisticaRecord(BaseModel):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     fecha: str
+    cliente: str = ""
     costo: float = 0.0
     carta_porte: str = ""
     servicio: str = ""
@@ -198,6 +199,7 @@ class LogisticaRecord(BaseModel):
 
 class LogisticaRecordCreate(BaseModel):
     fecha: str
+    cliente: str = ""
     costo: float = 0.0
     carta_porte: str = ""
     servicio: str = ""
@@ -207,6 +209,7 @@ class LogisticaRecordCreate(BaseModel):
 
 class LogisticaRecordUpdate(BaseModel):
     fecha: Optional[str] = None
+    cliente: Optional[str] = None
     costo: Optional[float] = None
     carta_porte: Optional[str] = None
     servicio: Optional[str] = None
@@ -220,6 +223,7 @@ class TransportistaRecord(BaseModel):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     fecha: str
+    cliente: str = ""
     costo_t: float = 0.0
     transporte: str = ""
     servicio: str = ""
@@ -232,6 +236,7 @@ class TransportistaRecord(BaseModel):
 
 class TransportistaRecordCreate(BaseModel):
     fecha: str
+    cliente: str = ""
     costo_t: float = 0.0
     transporte: str = ""
     servicio: str = ""
@@ -242,6 +247,7 @@ class TransportistaRecordCreate(BaseModel):
 
 class TransportistaRecordUpdate(BaseModel):
     fecha: Optional[str] = None
+    cliente: Optional[str] = None
     costo_t: Optional[float] = None
     transporte: Optional[str] = None
     servicio: Optional[str] = None
@@ -313,6 +319,7 @@ async def create_logistica_record(data: LogisticaRecordCreate):
     
     record = LogisticaRecord(
         fecha=data.fecha,
+        cliente=data.cliente,
         costo=data.costo,
         carta_porte=data.carta_porte,
         servicio=data.servicio,
@@ -401,6 +408,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
 
         column_map = {
             'fecha': ['fecha', 'date'],
+            'cliente': ['cliente', 'customer', 'empresa'],
             'costo': ['costo', 'cost', 'precio'],
             'carta_porte': ['carta porte', 'cartaporte', 'carta', 'porte', 'cp'],
             'servicio': ['servicio', 'service', 'descripcion'],
@@ -445,6 +453,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
                         else:
                             fecha = datetime.now().strftime('%Y-%m-%d')
 
+                        cliente = str(row[col_indices['cliente']] or "") if col_indices['cliente'] >= 0 else ""
                         costo = _parse_float(row[col_indices['costo']]) if col_indices['costo'] >= 0 else 0.0
                         carta_porte = str(row[col_indices['carta_porte']] or "") if col_indices['carta_porte'] >= 0 else ""
                         servicio = str(row[col_indices['servicio']] or "") if col_indices['servicio'] >= 0 else ""
@@ -459,6 +468,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
 
                         record = LogisticaRecord(
                             fecha=fecha,
+                            cliente=cliente,
                             costo=costo,
                             carta_porte=carta_porte,
                             servicio=servicio,
@@ -580,6 +590,7 @@ async def create_transportista_record(data: TransportistaRecordCreate):
     
     record = TransportistaRecord(
         fecha=data.fecha,
+        cliente=data.cliente,
         costo_t=data.costo_t,
         transporte=data.transporte,
         servicio=data.servicio,
@@ -674,6 +685,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
 
         column_map = {
             'fecha': ['fecha', 'date'],
+            'cliente': ['cliente', 'customer', 'empresa'],
             'costo_t': ['costo t', 'costot', 'costo transporte', 'costo'],
             'transporte': ['transporte', 'transportista', 'carrier'],
             'servicio': ['servicio', 'service', 'descripcion'],
@@ -735,6 +747,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
                         else:
                             fecha = datetime.now().strftime('%Y-%m-%d')
 
+                        cliente = str(row[col_indices['cliente']] or "") if col_indices['cliente'] >= 0 else ""
                         costo_t = _parse_float(row[col_indices['costo_t']]) if col_indices['costo_t'] >= 0 else 0.0
                         costo_l = _parse_float(row[col_indices['costo_l']]) if col_indices['costo_l'] >= 0 else 0.0
                         transporte = str(row[col_indices['transporte']] or "") if col_indices['transporte'] >= 0 else ""
@@ -750,6 +763,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
 
                         record = TransportistaRecord(
                             fecha=fecha,
+                            cliente=cliente,
                             costo_t=costo_t,
                             transporte=transporte,
                             servicio=servicio,

@@ -86,17 +86,19 @@ const readJSON = (key, fallback) => {
 };
 
 // Columnas para cada sección
-const LOGISTICA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
-const TRANSPORTE_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
+const LOGISTICA_CLIENTE_COLUMNS = ["fecha", "servicio", "costo_l", "status", "total_pendiente", "acciones"];
+const LOGISTICA_TRANSPORTISTA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
+const TRANSPORTE_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "acciones"];
 
 // Labels de columnas
 const LOGISTICA_COLUMN_LABELS = {
   fecha: "FECHA",
-  costo_t: "COSTO T",
-  transporte: "TRANSPORTE",
   servicio: "SERVICIO",
   costo_l: "COSTO L",
   status: "STATUS",
+  total_pendiente: "TOTAL PENDIENTE",
+  costo_t: "COSTO T",
+  transporte: "TRANSPORTISTA",
   total: "TOTAL",
   saldo_a_favor: "SALDO A FAVOR",
   acciones: "ACCIONES"
@@ -104,12 +106,9 @@ const LOGISTICA_COLUMN_LABELS = {
 
 const TRANSPORTE_COLUMN_LABELS = {
   fecha: "FECHA",
-  costo: "COSTO",
-  carta_porte: "CARTA PORTE",
+  costo_t: "COSTO T",
+  transporte: "TRANSPORTISTA",
   servicio: "SERVICIO",
-  shipment: "SHIPMENT",
-  status: "STATUS",
-  total: "TOTAL",
   acciones: "ACCIONES"
 };
 
@@ -118,9 +117,7 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
   return records.filter((record) => {
     const matchesStatus = statusFilter === "Todos" || record.status === statusFilter;
     
-    const searchFields = isLogistica 
-      ? [record.fecha, record.carta_porte, record.servicio, record.shipment, record.status]
-      : [record.fecha, record.transporte, record.servicio, record.status];
+    const searchFields = [record.fecha, record.cliente, record.transporte, record.servicio, record.status];
     
     const matchesSearch = !normalizedSearch || searchFields.some((field) =>
       String(field || "").toLowerCase().includes(normalizedSearch)
@@ -132,9 +129,7 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
       (!premiumFilters.from || new Date(record.fecha) >= new Date(premiumFilters.from)) &&
       (!premiumFilters.to || new Date(record.fecha) <= new Date(premiumFilters.to));
     
-    const fieldOk = isLogistica 
-      ? (!premiumFilters.field || (record.carta_porte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.shipment || "").toLowerCase().includes(premiumFilters.field.toLowerCase()))
-      : (!premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()));
+    const fieldOk = !premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.cliente || "").toLowerCase().includes(premiumFilters.field.toLowerCase());
     
     const servicioOk = !premiumFilters.servicio || (record.servicio || "").toLowerCase().includes(premiumFilters.servicio.toLowerCase());
     const premiumStatusOk = !premiumFilters.status || premiumFilters.status === "Todos" || record.status === premiumFilters.status;
@@ -156,9 +151,10 @@ const MetricCard = ({ label, value, variant = "default" }) => {
 };
 
 // Formulario para Logística
-const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
+const LogisticaForm = ({ record, onSave, onCancel, loading, clients = [] }) => {
   const [form, setForm] = useState({
     fecha: record?.fecha || todayISO(),
+    cliente: record?.cliente || "",
     costo: record?.costo || 0,
     carta_porte: record?.carta_porte || "",
     servicio: record?.servicio || "",
@@ -189,6 +185,13 @@ const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
           <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Cliente</label>
+          <input list="clientes-lista-log" type="text" name="cliente" value={form.cliente} onChange={handleChange} className="form-input w-full" />
+          <datalist id="clientes-lista-log">
+            {clients.map((client) => <option key={client.id} value={client.nombre} />)}
+          </datalist>
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Costo</label>
@@ -242,9 +245,10 @@ const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
 };
 
 // Formulario para Transportista
-const TransportistaForm = ({ record, onSave, onCancel, loading }) => {
+const TransportistaForm = ({ record, onSave, onCancel, loading, clients = [] }) => {
   const [form, setForm] = useState({
     fecha: record?.fecha || todayISO(),
+    cliente: record?.cliente || "",
     costo_t: record?.costo_t || 0,
     transporte: record?.transporte || "",
     servicio: record?.servicio || "",
@@ -278,6 +282,13 @@ const TransportistaForm = ({ record, onSave, onCancel, loading }) => {
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
           <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Cliente</label>
+          <input list="clientes-lista-trans" type="text" name="cliente" value={form.cliente} onChange={handleChange} className="form-input w-full" />
+          <datalist id="clientes-lista-trans">
+            {clients.map((client) => <option key={client.id} value={client.nombre} />)}
+          </datalist>
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Transporte</label>
@@ -391,6 +402,7 @@ function App() {
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || "QUIMBAR");
   const [clients, setClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState("Todos");
   const [showClientModal, setShowClientModal] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
@@ -408,10 +420,12 @@ function App() {
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
   const isLogistica = activeTab === "logistica";
-  const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
-  const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
-  const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
-  const currentColumns = isLogistica ? LOGISTICA_COLUMNS : TRANSPORTE_COLUMNS;
+  const activeApiBasePath = "/transportista";
+  const currentRecords = transportistaRecords;
+  const currentUploads = transportistaUploads;
+  const currentColumns = isLogistica
+    ? (activeLogisticaView === "cliente" ? LOGISTICA_CLIENTE_COLUMNS : LOGISTICA_TRANSPORTISTA_COLUMNS)
+    : TRANSPORTE_COLUMNS;
   const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTE_COLUMN_LABELS;
 
   useEffect(() => localStorage.setItem(STORAGE_KEYS.favoriteFilters, JSON.stringify(favoriteFilters)), [favoriteFilters]);
@@ -462,31 +476,36 @@ function App() {
     };
   }, [logisticaRecords]);
 
-  // Totales para Transportista
+  const recordsByClient = useMemo(
+    () => (selectedClient === "Todos" ? currentRecords : currentRecords.filter((r) => (r.cliente || "Sin cliente") === selectedClient)),
+    [currentRecords, selectedClient]
+  );
+
+  // Totales para vista activa (filtrados por cliente)
   const transportistaTotals = useMemo(() => {
-    const total_pendiente = transportistaRecords.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_pagado = transportistaRecords.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_saldo_a_favor = transportistaRecords.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
+    const total_pendiente = recordsByClient.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_pagado = recordsByClient.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_saldo_a_favor = recordsByClient.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
     return {
       total_pendiente,
       total_pagado,
       total_general: total_pendiente + total_pagado,
       total_saldo_a_favor
     };
-  }, [transportistaRecords]);
+  }, [recordsByClient]);
 
-  const currentTotals = isLogistica ? transportistaTotals : logisticaTotals;
+  const currentTotals = transportistaTotals;
 
   const filteredRecords = useMemo(
-    () => applyFilters(currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
-    [currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
+    () => applyFilters(recordsByClient, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
+    [recordsByClient, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
   );
 
   const displayedRecords = useMemo(() => {
-    if (isLogistica && activeLogisticaView === "transportista") {
-      return filteredRecords.filter((record) => record.status === "Pendiente");
-    }
-    return filteredRecords;
+    return filteredRecords.map((record) => ({
+      ...record,
+      total_pendiente: record.status === "Pendiente" ? toNumber(record.total) : 0,
+    }));
   }, [filteredRecords, isLogistica, activeLogisticaView]);
 
   // Analytics para el dashboard premium
@@ -666,8 +685,8 @@ function App() {
       const rowData = {};
       exportColumns.forEach(col => {
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
-          : ['costo', 'total'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
+          : ['costo_t'];
         rowData[col] = numericCols.includes(col)
           ? toNumber(record[col])
           : record[col] || "-";
@@ -678,8 +697,8 @@ function App() {
       exportColumns.forEach((col, index) => {
         const cell = row.getCell(index + 1);
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
-          : ['costo', 'total'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
+          : ['costo_t'];
         if (numericCols.includes(col)) {
           cell.numFmt = '"$"#,##0.00';
         }
@@ -748,8 +767,8 @@ function App() {
       exportColumns.map((column) => {
         if (column === "fecha") return record.fecha;
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
-          : ['costo', 'total'];
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
+          : ['costo_t'];
         if (numericCols.includes(column)) return formatCurrency(record[column]);
         return record[column] || "-";
       })
@@ -833,9 +852,7 @@ function App() {
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
     
     for (const record of selected) {
-      const newRecord = isLogistica 
-        ? { fecha: record.fecha, costo: record.costo, carta_porte: record.carta_porte, servicio: record.servicio, shipment: record.shipment, status: record.status }
-        : { fecha: record.fecha, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status };
+      const newRecord = { fecha: record.fecha, cliente: record.cliente, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status };
       await apiRequest("post", `${basePath}/records`, { data: newRecord });
     }
     
@@ -909,9 +926,7 @@ function App() {
   const handleInsertEmptyRow = async () => {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     const basePath = activeApiBasePath;
-    const payload = isLogistica
-      ? { fecha: todayISO(), costo_t: 0, transporte: "", servicio: "", costo_l: 0, status: "Pendiente", saldo_a_favor: 0 }
-      : { fecha: todayISO(), costo: 0, carta_porte: "", servicio: "", shipment: "", status: "Pendiente" };
+    const payload = { fecha: todayISO(), cliente: selectedClient === "Todos" ? "" : selectedClient, costo_t: 0, transporte: "", servicio: "", costo_l: 0, status: "Pendiente", saldo_a_favor: 0 };
     await apiRequest("post", `${basePath}/records`, { data: payload });
     await reloadBackendData();
     showNotice("Fila vacía insertada", "Éxito");
@@ -1030,22 +1045,7 @@ function App() {
           <MetricCard label="Total General" value={currentTotals.total_general} variant="default" />
           <MetricCard label="Total Pendiente" value={currentTotals.total_pendiente} variant="danger" />
           <MetricCard label="Total Pagado" value={currentTotals.total_pagado} variant="success" />
-          {!isLogistica && (
-            isPremiumUnlocked ? (
-              <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
-            ) : (
-              <div
-                className="metric-card flex flex-col items-center justify-center cursor-pointer border-dashed border-2 border-slate-300 opacity-60 hover:opacity-100 transition-opacity"
-                onClick={() => setShowPremiumModal(true)}
-              >
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Saldo a Favor</p>
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Lock size={18} />
-                  <span className="text-sm font-semibold">Desbloquear</span>
-                </div>
-              </div>
-            )
-          )}
+          {isLogistica && <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />}
         </div>
 
         {/* Modal de exportación */}
@@ -1156,7 +1156,7 @@ function App() {
 
         {/* Barra de búsqueda y filtros */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
-          <p className="text-sm text-slate-500">{currentRecords.length} registros en {isLogistica ? "Logística" : "Transporte"}</p>
+          <p className="text-sm text-slate-500">{displayedRecords.length} registros en {isLogistica ? "Logística" : "Transporte"} • Cliente: {selectedClient}</p>
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="search-input-wrapper">
               <MagnifyingGlass size={18} className="text-slate-400" />
@@ -1168,7 +1168,7 @@ function App() {
               ))}
             </div>
             <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
-              <Plus size={20} />Añadir Registro
+              <Plus size={20} />Añadir Registro ({isLogistica ? "Logística" : "Transporte"})
             </button>
           </div>
         </div>
@@ -1232,7 +1232,7 @@ function App() {
             <div className="premium-filters">
               <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
               <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
-              <input type="text" className="form-input" placeholder={isLogistica ? "Carta Porte / Shipment" : "Transporte"} value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
+              <input type="text" className="form-input" placeholder="Transportista / Cliente" value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
               <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
               <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
               <select className="form-input" onChange={(e) => { const f = favoriteFilters.find((x) => x.id === e.target.value); if (f) setPremiumFilters(f.filters); }} defaultValue="">
@@ -1250,31 +1250,23 @@ function App() {
           </div>
         )}
 
-        {/* Historial de archivos subidos */}
+        {/* Manejador de clientes */}
         <div className="upload-history mb-6">
           <div className="upload-history-header">
-            <h3><ClockCounterClockwise size={18} /> Historial de archivos - {isLogistica ? "Logística" : "Transporte"}</h3>
+            <h3><ClockCounterClockwise size={18} /> Manejador de Clientes</h3>
           </div>
-          {currentUploads.length === 0 ? (
-            <p className="upload-history-empty">Aún no has subido archivos en esta sección.</p>
-          ) : (
-            <div className="upload-history-list">
-              {currentUploads.map((upload) => (
-                <div className="upload-history-item" key={upload.id}>
-                  <div>
-                    <p className="upload-history-name">{upload.filename}</p>
-                    <p className="upload-history-meta">{upload.records_count} registros • {formatDate(upload.uploaded_at)}</p>
-                  </div>
-                  <div className="upload-history-actions">
-                    <button className="btn-secondary" onClick={() => handleLoadUploadedFile(upload.id)} disabled={loadingUploadId === upload.id}>
-                      {loadingUploadId === upload.id ? <SpinnerGap className="spinner" size={16} /> : <FolderOpen size={16} />}Cargar
-                    </button>
-                    <button className="btn-danger" onClick={() => handleDeleteUploadedFile(upload.id)}><TrashSimple size={16} />Borrar</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="p-4 flex flex-wrap gap-2">
+            <button onClick={() => setSelectedClient("Todos")} className={`filter-chip ${selectedClient === "Todos" ? "active" : ""}`}>Todos</button>
+            {clients.map((client) => (
+              <button
+                key={client.id}
+                onClick={() => setSelectedClient(client.nombre)}
+                className={`filter-chip ${selectedClient === client.nombre ? "active" : ""}`}
+              >
+                {client.nombre}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tabla de registros */}
@@ -1291,8 +1283,8 @@ function App() {
                     {isPremiumUnlocked && <th></th>}
                     {currentColumns.map((column) => {
                       const numericCols = isLogistica 
-                        ? ["costo_t", "costo_l", "total", "saldo_a_favor"]
-                        : ["costo", "total"];
+                        ? ["costo_t", "costo_l", "total", "saldo_a_favor", "total_pendiente"]
+                        : ["costo_t"];
                       const centerCol = column === "acciones";
                       return (
                         <th key={column} className={numericCols.includes(column) ? "text-right" : centerCol ? "text-center" : ""}>
@@ -1319,11 +1311,12 @@ function App() {
                       {isLogistica && (
                         <>
                           {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                          {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
-                          {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
                           {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
                           {currentColumns.includes("costo_l") && <td className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>}
                           {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
+                          {currentColumns.includes("total_pendiente") && <td className="text-right tabular-nums">{formatCurrency(record.total_pendiente)}</td>}
+                          {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
+                          {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
                           {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
                           {currentColumns.includes("saldo_a_favor") && <td className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>}
                         </>
@@ -1333,12 +1326,9 @@ function App() {
                       {!isLogistica && (
                         <>
                           {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                          {currentColumns.includes("costo") && <td className="text-right tabular-nums">{formatCurrency(record.costo)}</td>}
-                          {currentColumns.includes("carta_porte") && <td>{record.carta_porte || "-"}</td>}
+                          {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
+                          {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
                           {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
-                          {currentColumns.includes("shipment") && <td>{record.shipment || "-"}</td>}
-                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
-                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
                         </>
                       )}
                       
@@ -1382,9 +1372,9 @@ function App() {
               {selectedRecord ? "Editar Registro" : "Nuevo Registro"} - {isLogistica ? "Logística" : "Transporte"}
             </h2>
             {isLogistica ? (
-              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} clients={clients} />
             ) : (
-              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} clients={clients} />
             )}
           </div>
         </>
