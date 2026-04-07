@@ -88,6 +88,7 @@ const readJSON = (key, fallback) => {
 // Columnas para cada sección
 const LOGISTICA_CLIENTE_COLUMNS = ["fecha", "servicio", "costo_l", "status", "total_pendiente", "acciones"];
 const LOGISTICA_TRANSPORTISTA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "acciones"];
+const LOGISTICA_ARCHIVO_PRINCIPAL_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
 const TRANSPORTE_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
 
 // Labels de columnas
@@ -401,7 +402,7 @@ function App() {
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [favoriteFilterInput, setFavoriteFilterInput] = useState("");
   const [showPremiumDashboard, setShowPremiumDashboard] = useState(false);
-  const [activeLogisticaView, setActiveLogisticaView] = useState("cliente");
+  const [activeLogisticaView, setActiveLogisticaView] = useState("archivo_principal");
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || "QUIMBAR");
   const [clients, setClients] = useState([]);
@@ -427,7 +428,11 @@ function App() {
   const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
   const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
   const currentColumns = isLogistica
-    ? (activeLogisticaView === "cliente" ? LOGISTICA_CLIENTE_COLUMNS : LOGISTICA_TRANSPORTISTA_COLUMNS)
+    ? (activeLogisticaView === "cliente"
+      ? LOGISTICA_CLIENTE_COLUMNS
+      : activeLogisticaView === "transportista"
+        ? LOGISTICA_TRANSPORTISTA_COLUMNS
+        : LOGISTICA_ARCHIVO_PRINCIPAL_COLUMNS)
     : TRANSPORTE_COLUMNS;
   const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTE_COLUMN_LABELS;
 
@@ -1029,6 +1034,7 @@ function App() {
 
         {isLogistica && (
           <div className="flex gap-2 mb-4">
+            <button className={`filter-chip ${activeLogisticaView === "archivo_principal" ? "active" : ""}`} onClick={() => setActiveLogisticaView("archivo_principal")}>Archivo Principal</button>
             <button className={`filter-chip ${activeLogisticaView === "cliente" ? "active" : ""}`} onClick={() => setActiveLogisticaView("cliente")}>Vista Cliente</button>
             <button className={`filter-chip ${activeLogisticaView === "transportista" ? "active" : ""}`} onClick={() => setActiveLogisticaView("transportista")}>Vista Transportista</button>
           </div>
