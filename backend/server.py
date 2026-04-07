@@ -48,7 +48,8 @@ async def enforce_license(request: Request, call_next):
     if request.url.path in {"/api/license/verify"} or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
         return await call_next(request)
     token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
-    valid, reason = _validate_token(token)
+    machine_id = os.environ.get("QUIMBAR_MACHINE_ID", "")
+    valid, reason = _validate_token(token, machine_id or None)
     if not valid:
         return JSONResponse(status_code=403, content={"detail": f"Licencia inválida: {reason}"})
     return await call_next(request)
@@ -145,13 +146,32 @@ def _parse_float(value) -> float:
         return 0.0
 
 
-def _validate_token(token: str) -> tuple[bool, str]:
-    if not token or not token.startswith("QBM."):
+def _machine_hash(machine_id: str) -> str:
+    return hashlib.sha256(machine_id.encode("utf-8")).hexdigest()[:12]
+
+
+def _validate_token(token: str, machine_id: Optional[str] = None) -> tuple[bool, str]:
+    if not token or (not token.startswith("QBM.") and not token.startswith("QBM2.")):
         return False, "Token vacío o formato inválido"
     try:
-        _, expiry_compact, signature = token.split(".")
+        parts = token.split(".")
+        token_version = parts[0]
+
+        if token_version == "QBM2":
+            if len(parts) != 4:
+                return False, "Formato QBM2 inválido"
+            _, expiry_compact, token_machine_hash, signature = parts
+            if machine_id and token_machine_hash != _machine_hash(machine_id):
+                return False, "Token no pertenece a esta computadora"
+            payload = f"{expiry_compact}.{token_machine_hash}"
+        else:
+            if len(parts) != 3:
+                return False, "Formato QBM inválido"
+            _, expiry_compact, signature = parts
+            payload = expiry_compact
+
         expiry_date = datetime.strptime(expiry_compact, "%Y%m%d").date()
-        expected = hmac.new(LICENSE_SECRET.encode("utf-8"), f"{expiry_compact}".encode("utf-8"), hashlib.sha256).hexdigest()[:12]
+        expected = hmac.new(LICENSE_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()[:12]
         if not hmac.compare_digest(expected, signature):
             return False, "Firma inválida"
         if datetime.utcnow().date() > expiry_date:
@@ -167,6 +187,7 @@ class LogisticaRecord(BaseModel):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     fecha: str
+    cliente: str = ""
     costo: float = 0.0
     carta_porte: str = ""
     servicio: str = ""
@@ -178,6 +199,7 @@ class LogisticaRecord(BaseModel):
 
 class LogisticaRecordCreate(BaseModel):
     fecha: str
+    cliente: str = ""
     costo: float = 0.0
     carta_porte: str = ""
     servicio: str = ""
@@ -187,6 +209,7 @@ class LogisticaRecordCreate(BaseModel):
 
 class LogisticaRecordUpdate(BaseModel):
     fecha: Optional[str] = None
+    cliente: Optional[str] = None
     costo: Optional[float] = None
     carta_porte: Optional[str] = None
     servicio: Optional[str] = None
@@ -200,6 +223,7 @@ class TransportistaRecord(BaseModel):
     
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     fecha: str
+    cliente: str = ""
     costo_t: float = 0.0
     transporte: str = ""
     servicio: str = ""
@@ -212,6 +236,7 @@ class TransportistaRecord(BaseModel):
 
 class TransportistaRecordCreate(BaseModel):
     fecha: str
+    cliente: str = ""
     costo_t: float = 0.0
     transporte: str = ""
     servicio: str = ""
@@ -222,6 +247,7 @@ class TransportistaRecordCreate(BaseModel):
 
 class TransportistaRecordUpdate(BaseModel):
     fecha: Optional[str] = None
+    cliente: Optional[str] = None
     costo_t: Optional[float] = None
     transporte: Optional[str] = None
     servicio: Optional[str] = None
@@ -293,6 +319,7 @@ async def create_logistica_record(data: LogisticaRecordCreate):
     
     record = LogisticaRecord(
         fecha=data.fecha,
+        cliente=data.cliente,
         costo=data.costo,
         carta_porte=data.carta_porte,
         servicio=data.servicio,
@@ -381,6 +408,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
 
         column_map = {
             'fecha': ['fecha', 'date'],
+            'cliente': ['cliente', 'customer', 'empresa'],
             'costo': ['costo', 'cost', 'precio'],
             'carta_porte': ['carta porte', 'cartaporte', 'carta', 'porte', 'cp'],
             'servicio': ['servicio', 'service', 'descripcion'],
@@ -425,6 +453,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
                         else:
                             fecha = datetime.now().strftime('%Y-%m-%d')
 
+                        cliente = str(row[col_indices['cliente']] or "") if col_indices['cliente'] >= 0 else ""
                         costo = _parse_float(row[col_indices['costo']]) if col_indices['costo'] >= 0 else 0.0
                         carta_porte = str(row[col_indices['carta_porte']] or "") if col_indices['carta_porte'] >= 0 else ""
                         servicio = str(row[col_indices['servicio']] or "") if col_indices['servicio'] >= 0 else ""
@@ -439,6 +468,7 @@ async def upload_logistica_excel(file: UploadFile = File(...)):
 
                         record = LogisticaRecord(
                             fecha=fecha,
+                            cliente=cliente,
                             costo=costo,
                             carta_porte=carta_porte,
                             servicio=servicio,
@@ -560,6 +590,7 @@ async def create_transportista_record(data: TransportistaRecordCreate):
     
     record = TransportistaRecord(
         fecha=data.fecha,
+        cliente=data.cliente,
         costo_t=data.costo_t,
         transporte=data.transporte,
         servicio=data.servicio,
@@ -654,6 +685,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
 
         column_map = {
             'fecha': ['fecha', 'date'],
+            'cliente': ['cliente', 'customer', 'empresa'],
             'costo_t': ['costo t', 'costot', 'costo transporte', 'costo'],
             'transporte': ['transporte', 'transportista', 'carrier'],
             'servicio': ['servicio', 'service', 'descripcion'],
@@ -715,6 +747,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
                         else:
                             fecha = datetime.now().strftime('%Y-%m-%d')
 
+                        cliente = str(row[col_indices['cliente']] or "") if col_indices['cliente'] >= 0 else ""
                         costo_t = _parse_float(row[col_indices['costo_t']]) if col_indices['costo_t'] >= 0 else 0.0
                         costo_l = _parse_float(row[col_indices['costo_l']]) if col_indices['costo_l'] >= 0 else 0.0
                         transporte = str(row[col_indices['transporte']] or "") if col_indices['transporte'] >= 0 else ""
@@ -730,6 +763,7 @@ async def upload_transportista_excel(file: UploadFile = File(...)):
 
                         record = TransportistaRecord(
                             fecha=fecha,
+                            cliente=cliente,
                             costo_t=costo_t,
                             transporte=transporte,
                             servicio=servicio,
@@ -844,7 +878,8 @@ async def create_client(data: ClientCreate):
 @api_router.get("/license/verify")
 async def verify_license():
     token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
-    valid, reason = _validate_token(token)
+    machine_id = os.environ.get("QUIMBAR_MACHINE_ID", "")
+    valid, reason = _validate_token(token, machine_id or None)
     return {"valid": valid, "reason": reason}
 
 
@@ -875,4 +910,12 @@ async def shutdown_db_client():
 if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    # Evita fallos de formatter en ejecutables Windows (PyInstaller) donde
+    # stdout/stderr pueden no exponer isatty().
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_config=None,
+        access_log=False,
+    )

@@ -28,7 +28,6 @@ import {
   LockOpen,
   FloppyDisk,
   ArrowsClockwise,
-  Download,
   Copy,
   ChartLine
 } from "@phosphor-icons/react";
@@ -38,13 +37,15 @@ import { saveAs } from "file-saver";
 
 const STORAGE_KEYS = {
   premium: "quimbar-premium-unlocked",
+  premiumToken: "quimbar-premium-token",
   theme: "quimbar-theme",
   favoriteFilters: "quimbar-favorite-filters",
   logo: "quimbar-company-logo",
   companyName: "quimbar-company-name"
 };
 
-const PREMIUM_ACCESS_KEY = process.env.REACT_APP_PREMIUM_KEY;
+const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET || "QuimbarPremium2026";
+const RENEW_PAGE_URL = "https://leija05.github.io/Venta/";
 const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL).replace(/\/+$/, "");
 const API_CANDIDATES = BACKEND_URL.endsWith("/api")
   ? [BACKEND_URL, BACKEND_URL.replace(/\/api$/, "")]
@@ -76,6 +77,53 @@ const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "curre
 const formatDate = (dateStr) => (!dateStr ? "-" : new Date(dateStr).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" }));
 const toNumber = (value) => Number.parseFloat(value || 0) || 0;
 const todayISO = () => new Date().toISOString().split("T")[0];
+const hmacSha256Hex = async (payload, secret) => {
+  const enc = new TextEncoder();
+  const key = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await window.crypto.subtle.sign("HMAC", key, enc.encode(payload));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const validatePremiumToken = async (token) => {
+  if (!token) return { valid: false, reason: "Token vacío" };
+  const normalized = token.trim();
+  const parts = normalized.split(".");
+  const version = parts[0];
+  if (!["QBP", "QBP2"].includes(version)) return { valid: false, reason: "Formato inválido" };
+
+  let expiryCompact = "";
+  let signature = "";
+  let payload = "";
+  if (version === "QBP2") {
+    if (parts.length !== 4) return { valid: false, reason: "Formato QBP2 inválido" };
+    expiryCompact = parts[1];
+    const hwHash = parts[2];
+    signature = parts[3];
+    payload = `${expiryCompact}.${hwHash}`;
+  } else {
+    if (parts.length !== 3) return { valid: false, reason: "Formato QBP inválido" };
+    expiryCompact = parts[1];
+    signature = parts[2];
+    payload = expiryCompact;
+  }
+
+  const expiryDate = new Date(`${expiryCompact.slice(0, 4)}-${expiryCompact.slice(4, 6)}-${expiryCompact.slice(6, 8)}T23:59:59Z`);
+  if (Number.isNaN(expiryDate.getTime())) return { valid: false, reason: "Fecha inválida" };
+
+  const expected = (await hmacSha256Hex(payload, PREMIUM_TOKEN_SECRET)).slice(0, 12);
+  if (expected !== signature) return { valid: false, reason: "Firma inválida" };
+  if (new Date() > expiryDate) return { valid: false, reason: "Suscripción premium caducada" };
+  return { valid: true, expiryDate };
+};
+
 const readJSON = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
@@ -86,17 +134,20 @@ const readJSON = (key, fallback) => {
 };
 
 // Columnas para cada sección
-const LOGISTICA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
+const LOGISTICA_CLIENTE_COLUMNS = ["fecha", "servicio", "costo_l", "status", "total_pendiente", "acciones"];
+const LOGISTICA_TRANSPORTISTA_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "acciones"];
+const LOGISTICA_ARCHIVO_PRINCIPAL_COLUMNS = ["fecha", "costo_t", "transporte", "servicio", "costo_l", "status", "total", "saldo_a_favor", "acciones"];
 const TRANSPORTE_COLUMNS = ["fecha", "costo", "carta_porte", "servicio", "shipment", "status", "total", "acciones"];
 
 // Labels de columnas
 const LOGISTICA_COLUMN_LABELS = {
   fecha: "FECHA",
-  costo_t: "COSTO T",
-  transporte: "TRANSPORTE",
   servicio: "SERVICIO",
   costo_l: "COSTO L",
   status: "STATUS",
+  total_pendiente: "TOTAL PENDIENTE",
+  costo_t: "COSTO T",
+  transporte: "TRANSPORTISTA",
   total: "TOTAL",
   saldo_a_favor: "SALDO A FAVOR",
   acciones: "ACCIONES"
@@ -118,9 +169,7 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
   return records.filter((record) => {
     const matchesStatus = statusFilter === "Todos" || record.status === statusFilter;
     
-    const searchFields = isLogistica 
-      ? [record.fecha, record.carta_porte, record.servicio, record.shipment, record.status]
-      : [record.fecha, record.transporte, record.servicio, record.status];
+    const searchFields = [record.fecha, record.cliente, record.transporte, record.carta_porte, record.shipment, record.servicio, record.status];
     
     const matchesSearch = !normalizedSearch || searchFields.some((field) =>
       String(field || "").toLowerCase().includes(normalizedSearch)
@@ -132,9 +181,7 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
       (!premiumFilters.from || new Date(record.fecha) >= new Date(premiumFilters.from)) &&
       (!premiumFilters.to || new Date(record.fecha) <= new Date(premiumFilters.to));
     
-    const fieldOk = isLogistica 
-      ? (!premiumFilters.field || (record.carta_porte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.shipment || "").toLowerCase().includes(premiumFilters.field.toLowerCase()))
-      : (!premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()));
+    const fieldOk = !premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.cliente || "").toLowerCase().includes(premiumFilters.field.toLowerCase());
     
     const servicioOk = !premiumFilters.servicio || (record.servicio || "").toLowerCase().includes(premiumFilters.servicio.toLowerCase());
     const premiumStatusOk = !premiumFilters.status || premiumFilters.status === "Todos" || record.status === premiumFilters.status;
@@ -156,9 +203,10 @@ const MetricCard = ({ label, value, variant = "default" }) => {
 };
 
 // Formulario para Logística
-const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
+const LogisticaForm = ({ record, onSave, onCancel, loading, clients = [] }) => {
   const [form, setForm] = useState({
     fecha: record?.fecha || todayISO(),
+    cliente: record?.cliente || "",
     costo: record?.costo || 0,
     carta_porte: record?.carta_porte || "",
     servicio: record?.servicio || "",
@@ -189,6 +237,13 @@ const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
           <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Cliente</label>
+          <input list="clientes-lista-log" type="text" name="cliente" value={form.cliente} onChange={handleChange} className="form-input w-full" />
+          <datalist id="clientes-lista-log">
+            {clients.map((client) => <option key={client.id} value={client.nombre} />)}
+          </datalist>
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Costo</label>
@@ -242,9 +297,10 @@ const LogisticaForm = ({ record, onSave, onCancel, loading }) => {
 };
 
 // Formulario para Transportista
-const TransportistaForm = ({ record, onSave, onCancel, loading }) => {
+const TransportistaForm = ({ record, onSave, onCancel, loading, clients = [] }) => {
   const [form, setForm] = useState({
     fecha: record?.fecha || todayISO(),
+    cliente: record?.cliente || "",
     costo_t: record?.costo_t || 0,
     transporte: record?.transporte || "",
     servicio: record?.servicio || "",
@@ -278,6 +334,13 @@ const TransportistaForm = ({ record, onSave, onCancel, loading }) => {
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Fecha</label>
           <input type="date" name="fecha" value={form.fecha} onChange={handleChange} className="form-input w-full" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1 text-slate-700">Cliente</label>
+          <input list="clientes-lista-trans" type="text" name="cliente" value={form.cliente} onChange={handleChange} className="form-input w-full" />
+          <datalist id="clientes-lista-trans">
+            {clients.map((client) => <option key={client.id} value={client.nombre} />)}
+          </datalist>
         </div>
         <div>
           <label className="block text-sm font-semibold mb-1 text-slate-700">Transporte</label>
@@ -378,6 +441,8 @@ function App() {
   const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => localStorage.getItem(STORAGE_KEYS.premium) === "1");
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumKeyInput, setPremiumKeyInput] = useState("");
+  const [showPremiumExpiredModal, setShowPremiumExpiredModal] = useState(false);
+  const [premiumExpiredReason, setPremiumExpiredReason] = useState("");
   const [premiumFilters, setPremiumFilters] = useState({ from: "", to: "", field: "", servicio: "", status: "Todos" });
   const [selectedIds, setSelectedIds] = useState([]);
   const [serverBooting, setServerBooting] = useState(true);
@@ -387,11 +452,13 @@ function App() {
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [favoriteFilterInput, setFavoriteFilterInput] = useState("");
   const [showPremiumDashboard, setShowPremiumDashboard] = useState(false);
-  const [activeLogisticaView, setActiveLogisticaView] = useState("cliente");
+  const [activeLogisticaView, setActiveLogisticaView] = useState("archivo_principal");
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || "QUIMBAR");
   const [clients, setClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState("Todos");
   const [showClientModal, setShowClientModal] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -411,7 +478,13 @@ function App() {
   const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
   const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
   const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
-  const currentColumns = isLogistica ? LOGISTICA_COLUMNS : TRANSPORTE_COLUMNS;
+  const currentColumns = isLogistica
+    ? (activeLogisticaView === "cliente"
+      ? LOGISTICA_CLIENTE_COLUMNS
+      : activeLogisticaView === "transportista"
+        ? LOGISTICA_TRANSPORTISTA_COLUMNS
+        : LOGISTICA_ARCHIVO_PRINCIPAL_COLUMNS)
+    : TRANSPORTE_COLUMNS;
   const currentColumnLabels = isLogistica ? LOGISTICA_COLUMN_LABELS : TRANSPORTE_COLUMN_LABELS;
 
   useEffect(() => localStorage.setItem(STORAGE_KEYS.favoriteFilters, JSON.stringify(favoriteFilters)), [favoriteFilters]);
@@ -419,6 +492,23 @@ function App() {
   useEffect(() => localStorage.setItem(STORAGE_KEYS.premium, isPremiumUnlocked ? "1" : "0"), [isPremiumUnlocked]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.logo, companyLogo), [companyLogo]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.companyName, companyName), [companyName]);
+  useEffect(() => {
+    const storedToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
+    if (!storedToken) return;
+    let mounted = true;
+    validatePremiumToken(storedToken).then((status) => {
+      if (!mounted) return;
+      if (!status.valid) {
+        setIsPremiumUnlocked(false);
+        localStorage.removeItem(STORAGE_KEYS.premiumToken);
+        setPremiumExpiredReason(status.reason || "Suscripción premium caducada");
+        setShowPremiumExpiredModal(true);
+      } else {
+        setIsPremiumUnlocked(true);
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     const loadFromBackend = async () => {
@@ -462,31 +552,36 @@ function App() {
     };
   }, [logisticaRecords]);
 
-  // Totales para Transportista
+  const recordsByClient = useMemo(
+    () => (selectedClient === "Todos" ? currentRecords : currentRecords.filter((r) => (r.cliente || "Sin cliente") === selectedClient)),
+    [currentRecords, selectedClient]
+  );
+
+  // Totales para vista activa (filtrados por cliente)
   const transportistaTotals = useMemo(() => {
-    const total_pendiente = transportistaRecords.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_pagado = transportistaRecords.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
-    const total_saldo_a_favor = transportistaRecords.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
+    const total_pendiente = recordsByClient.filter((r) => r.status === "Pendiente").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_pagado = recordsByClient.filter((r) => r.status === "Pagado").reduce((sum, r) => sum + toNumber(r.total), 0);
+    const total_saldo_a_favor = recordsByClient.reduce((sum, r) => sum + toNumber(r.saldo_a_favor), 0);
     return {
       total_pendiente,
       total_pagado,
       total_general: total_pendiente + total_pagado,
       total_saldo_a_favor
     };
-  }, [transportistaRecords]);
+  }, [recordsByClient]);
 
-  const currentTotals = isLogistica ? transportistaTotals : logisticaTotals;
+  const currentTotals = transportistaTotals;
 
   const filteredRecords = useMemo(
-    () => applyFilters(currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
-    [currentRecords, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
+    () => applyFilters(recordsByClient, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica),
+    [recordsByClient, searchTerm, statusFilter, premiumFilters, isPremiumUnlocked, isLogistica]
   );
 
   const displayedRecords = useMemo(() => {
-    if (isLogistica && activeLogisticaView === "transportista") {
-      return filteredRecords.filter((record) => record.status === "Pendiente");
-    }
-    return filteredRecords;
+    return filteredRecords.map((record) => ({
+      ...record,
+      total_pendiente: record.status === "Pendiente" ? toNumber(record.total) : 0,
+    }));
   }, [filteredRecords, isLogistica, activeLogisticaView]);
 
   // Analytics para el dashboard premium
@@ -666,7 +761,7 @@ function App() {
       const rowData = {};
       exportColumns.forEach(col => {
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         rowData[col] = numericCols.includes(col)
           ? toNumber(record[col])
@@ -678,7 +773,7 @@ function App() {
       exportColumns.forEach((col, index) => {
         const cell = row.getCell(index + 1);
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         if (numericCols.includes(col)) {
           cell.numFmt = '"$"#,##0.00';
@@ -748,7 +843,7 @@ function App() {
       exportColumns.map((column) => {
         if (column === "fecha") return record.fecha;
         const numericCols = isLogistica 
-          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor']
+          ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         if (numericCols.includes(column)) return formatCurrency(record[column]);
         return record[column] || "-";
@@ -833,9 +928,9 @@ function App() {
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
     
     for (const record of selected) {
-      const newRecord = isLogistica 
-        ? { fecha: record.fecha, costo: record.costo, carta_porte: record.carta_porte, servicio: record.servicio, shipment: record.shipment, status: record.status }
-        : { fecha: record.fecha, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status };
+      const newRecord = isLogistica
+        ? { fecha: record.fecha, cliente: record.cliente, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status }
+        : { fecha: record.fecha, cliente: record.cliente, costo: record.costo, carta_porte: record.carta_porte, servicio: record.servicio, shipment: record.shipment, status: record.status };
       await apiRequest("post", `${basePath}/records`, { data: newRecord });
     }
     
@@ -910,8 +1005,8 @@ function App() {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     const basePath = activeApiBasePath;
     const payload = isLogistica
-      ? { fecha: todayISO(), costo_t: 0, transporte: "", servicio: "", costo_l: 0, status: "Pendiente", saldo_a_favor: 0 }
-      : { fecha: todayISO(), costo: 0, carta_porte: "", servicio: "", shipment: "", status: "Pendiente" };
+      ? { fecha: todayISO(), cliente: selectedClient === "Todos" ? "" : selectedClient, costo_t: 0, transporte: "", servicio: "", costo_l: 0, status: "Pendiente", saldo_a_favor: 0 }
+      : { fecha: todayISO(), cliente: selectedClient === "Todos" ? "" : selectedClient, costo: 0, carta_porte: "", servicio: "", shipment: "", status: "Pendiente" };
     await apiRequest("post", `${basePath}/records`, { data: payload });
     await reloadBackendData();
     showNotice("Fila vacía insertada", "Éxito");
@@ -935,18 +1030,6 @@ function App() {
     showNotice("Filtro favorito guardado", "Éxito");
   };
 
-  const handleExportBackup = () => {
-    const payload = { 
-      version: 1, 
-      exported_at: new Date().toISOString(), 
-      logistica: { records: logisticaRecords, uploads: logisticaUploads },
-      transportista: { records: transportistaRecords, uploads: transportistaUploads },
-      favoriteFilters 
-    };
-    saveAs(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `quimbar_backup_${todayISO()}.json`);
-    showNotice("Backup exportado", "Éxito");
-  };
-
   return (
     <div className={`app-container ${darkMode ? "dark-theme" : ""}`}>
       <header className="app-header">
@@ -964,28 +1047,23 @@ function App() {
                   : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transporte"}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <label className="btn-primary cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
-              {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
-              Subir Asap Logística
-            </label>
-            <label className="btn-secondary cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
-              <UploadSimple size={20} />
-              Subir Transportistas
-            </label>
-            <label className="btn-secondary cursor-pointer">
-              <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-              <UploadSimple size={20} />
-              Logo
-            </label>
-            <button onClick={() => setExportSettings(prev => ({ ...prev, showModal: true }))} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
-            <button onClick={() => setShowClientModal(true)} className="btn-secondary"><Plus size={18} />Cliente</button>
-            <button onClick={handleInsertEmptyRow} className="btn-secondary"><Plus size={18} />Fila vacía</button>
-            <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
-            <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-            <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="theme-switch" role="group" aria-label="Cambiar tema">
+              <Sun size={16} className={!darkMode ? "theme-icon active" : "theme-icon"} />
+              <button
+                type="button"
+                onClick={() => setDarkMode((prev) => !prev)}
+                className={`theme-switch-track ${darkMode ? "dark" : ""}`}
+                aria-label={darkMode ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+                aria-pressed={darkMode}
+              >
+                <span className="theme-switch-thumb" />
+              </button>
+              <Moon size={16} className={darkMode ? "theme-icon active" : "theme-icon"} />
+            </div>
+            <button onClick={() => setShowOptionsModal(true)} className="btn-primary">
+              <Files size={20} weight="duotone" />Opciones
+            </button>
           </div>
         </div>
       </header>
@@ -1007,6 +1085,7 @@ function App() {
 
         {isLogistica && (
           <div className="flex gap-2 mb-4">
+            <button className={`filter-chip ${activeLogisticaView === "archivo_principal" ? "active" : ""}`} onClick={() => setActiveLogisticaView("archivo_principal")}>Archivo Principal</button>
             <button className={`filter-chip ${activeLogisticaView === "cliente" ? "active" : ""}`} onClick={() => setActiveLogisticaView("cliente")}>Vista Cliente</button>
             <button className={`filter-chip ${activeLogisticaView === "transportista" ? "active" : ""}`} onClick={() => setActiveLogisticaView("transportista")}>Vista Transportista</button>
           </div>
@@ -1030,21 +1109,8 @@ function App() {
           <MetricCard label="Total General" value={currentTotals.total_general} variant="default" />
           <MetricCard label="Total Pendiente" value={currentTotals.total_pendiente} variant="danger" />
           <MetricCard label="Total Pagado" value={currentTotals.total_pagado} variant="success" />
-          {!isLogistica && (
-            isPremiumUnlocked ? (
-              <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
-            ) : (
-              <div
-                className="metric-card flex flex-col items-center justify-center cursor-pointer border-dashed border-2 border-slate-300 opacity-60 hover:opacity-100 transition-opacity"
-                onClick={() => setShowPremiumModal(true)}
-              >
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Saldo a Favor</p>
-                <div className="flex items-center gap-2 text-slate-500">
-                  <Lock size={18} />
-                  <span className="text-sm font-semibold">Desbloquear</span>
-                </div>
-              </div>
-            )
+          {isLogistica && isPremiumUnlocked && (
+            <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
           )}
         </div>
 
@@ -1154,21 +1220,12 @@ function App() {
           </div>
         )}
 
-        {/* Barra de búsqueda y filtros */}
+        {/* Barra principal */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
-          <p className="text-sm text-slate-500">{currentRecords.length} registros en {isLogistica ? "Logística" : "Transporte"}</p>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="search-input-wrapper">
-              <MagnifyingGlass size={18} className="text-slate-400" />
-              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
-            </div>
-            <div className="filter-chip-group">
-              {["Todos", "Pendiente", "Pagado"].map((f) => (
-                <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
-              ))}
-            </div>
+          <p className="text-sm text-slate-500">{displayedRecords.length} registros en {isLogistica ? "Logística" : "Transporte"} • Cliente: {selectedClient}</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
-              <Plus size={20} />Añadir Registro
+              <Plus size={20} />Añadir Registro ({isLogistica ? "Logística" : "Transporte"})
             </button>
           </div>
         </div>
@@ -1230,51 +1287,73 @@ function App() {
         {isPremiumUnlocked && (
           <div className="premium-toolbar mb-4">
             <div className="premium-filters">
+              <div className="search-input-wrapper">
+                <MagnifyingGlass size={18} className="text-slate-400" />
+                <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
+              </div>
+              <div className="filter-chip-group">
+                {["Todos", "Pendiente", "Pagado"].map((f) => (
+                  <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
+                ))}
+              </div>
               <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
               <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
-              <input type="text" className="form-input" placeholder={isLogistica ? "Carta Porte / Shipment" : "Transporte"} value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
+              <input type="text" className="form-input" placeholder="Transportista / Cliente" value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
               <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
               <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
-              <select className="form-input" onChange={(e) => { const f = favoriteFilters.find((x) => x.id === e.target.value); if (f) setPremiumFilters(f.filters); }} defaultValue="">
-                <option value="">Filtros favoritos</option>
+              <select
+                className="form-input"
+                onChange={(e) => {
+                  if (!e.target.value) {
+                    setPremiumFilters({ from: "", to: "", field: "", servicio: "", status: "Todos" });
+                    setSearchTerm("");
+                    setStatusFilter("Todos");
+                    return;
+                  }
+                  const f = favoriteFilters.find((x) => x.id === e.target.value);
+                  if (f) setPremiumFilters(f.filters);
+                }}
+                defaultValue=""
+              >
+                <option value="">Sin filtro guardado</option>
                 {favoriteFilters.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
               </select>
-            </div>
-            <div className="premium-bulk">
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
-              <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
-              <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
-              <button className="btn-secondary" onClick={handleExportBackup}><Download size={16} />Backup</button>
             </div>
           </div>
         )}
 
-        {/* Historial de archivos subidos */}
+        {isPremiumUnlocked && selectedIds.length > 0 && (
+          <div className="selection-action-bar">
+            <div className="selection-action-content">
+              <p className="selection-counter">{selectedIds.length} seleccionados</p>
+              <div className="premium-bulk">
+                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
+                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
+                <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
+                <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
+                <button className="btn-secondary" onClick={() => setSelectedIds([])}><X size={16} />Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Manejador de clientes */}
         <div className="upload-history mb-6">
           <div className="upload-history-header">
-            <h3><ClockCounterClockwise size={18} /> Historial de archivos - {isLogistica ? "Logística" : "Transporte"}</h3>
+            <h3><ClockCounterClockwise size={18} /> Manejador de Clientes</h3>
           </div>
-          {currentUploads.length === 0 ? (
-            <p className="upload-history-empty">Aún no has subido archivos en esta sección.</p>
-          ) : (
-            <div className="upload-history-list">
-              {currentUploads.map((upload) => (
-                <div className="upload-history-item" key={upload.id}>
-                  <div>
-                    <p className="upload-history-name">{upload.filename}</p>
-                    <p className="upload-history-meta">{upload.records_count} registros • {formatDate(upload.uploaded_at)}</p>
-                  </div>
-                  <div className="upload-history-actions">
-                    <button className="btn-secondary" onClick={() => handleLoadUploadedFile(upload.id)} disabled={loadingUploadId === upload.id}>
-                      {loadingUploadId === upload.id ? <SpinnerGap className="spinner" size={16} /> : <FolderOpen size={16} />}Cargar
-                    </button>
-                    <button className="btn-danger" onClick={() => handleDeleteUploadedFile(upload.id)}><TrashSimple size={16} />Borrar</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="p-4 flex flex-wrap gap-2">
+            <button onClick={() => setSelectedClient("Todos")} className={`filter-chip ${selectedClient === "Todos" ? "active" : ""}`}>Todos</button>
+            {clients.map((client) => (
+              <button
+                key={client.id}
+                onClick={() => setSelectedClient(client.nombre)}
+                className={`filter-chip ${selectedClient === client.nombre ? "active" : ""}`}
+              >
+                {client.nombre}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tabla de registros */}
@@ -1291,7 +1370,7 @@ function App() {
                     {isPremiumUnlocked && <th></th>}
                     {currentColumns.map((column) => {
                       const numericCols = isLogistica 
-                        ? ["costo_t", "costo_l", "total", "saldo_a_favor"]
+                        ? ["costo_t", "costo_l", "total", "saldo_a_favor", "total_pendiente"]
                         : ["costo", "total"];
                       const centerCol = column === "acciones";
                       return (
@@ -1315,32 +1394,38 @@ function App() {
                         </td>
                       )}
                       
-                      {/* Columnas de Logística */}
-                      {isLogistica && (
-                        <>
-                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                          {currentColumns.includes("costo_t") && <td className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>}
-                          {currentColumns.includes("transporte") && <td>{record.transporte || "-"}</td>}
-                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
-                          {currentColumns.includes("costo_l") && <td className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>}
-                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
-                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
-                          {currentColumns.includes("saldo_a_favor") && <td className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>}
-                        </>
-                      )}
-                      
-                      {/* Columnas de Transporte */}
-                      {!isLogistica && (
-                        <>
-                          {currentColumns.includes("fecha") && <td>{formatDate(record.fecha)}</td>}
-                          {currentColumns.includes("costo") && <td className="text-right tabular-nums">{formatCurrency(record.costo)}</td>}
-                          {currentColumns.includes("carta_porte") && <td>{record.carta_porte || "-"}</td>}
-                          {currentColumns.includes("servicio") && <td>{record.servicio || "-"}</td>}
-                          {currentColumns.includes("shipment") && <td>{record.shipment || "-"}</td>}
-                          {currentColumns.includes("status") && <td><StatusBadge status={record.status} /></td>}
-                          {currentColumns.includes("total") && <td className="text-right tabular-nums">{formatCurrency(record.total)}</td>}
-                        </>
-                      )}
+                      {currentColumns
+                        .filter((column) => column !== "acciones")
+                        .map((column) => {
+                          switch (column) {
+                            case "fecha":
+                              return <td key={column}>{formatDate(record.fecha)}</td>;
+                            case "servicio":
+                              return <td key={column}>{record.servicio || "-"}</td>;
+                            case "costo_l":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>;
+                            case "status":
+                              return <td key={column}><StatusBadge status={record.status} /></td>;
+                            case "total_pendiente":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total_pendiente)}</td>;
+                            case "costo_t":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>;
+                            case "transporte":
+                              return <td key={column}>{record.transporte || "-"}</td>;
+                            case "total":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total)}</td>;
+                            case "saldo_a_favor":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>;
+                            case "costo":
+                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo)}</td>;
+                            case "carta_porte":
+                              return <td key={column}>{record.carta_porte || "-"}</td>;
+                            case "shipment":
+                              return <td key={column}>{record.shipment || "-"}</td>;
+                            default:
+                              return <td key={column}>-</td>;
+                          }
+                        })}
                       
                       {currentColumns.includes("acciones") && (
                         <td className="text-center">
@@ -1382,9 +1467,9 @@ function App() {
               {selectedRecord ? "Editar Registro" : "Nuevo Registro"} - {isLogistica ? "Logística" : "Transporte"}
             </h2>
             {isLogistica ? (
-              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+              <TransportistaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} clients={clients} />
             ) : (
-              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} />
+              <LogisticaForm record={selectedRecord} onSave={handleSaveRecord} onCancel={() => { setShowForm(false); setSelectedRecord(null); }} loading={saving} clients={clients} />
             )}
           </div>
         </>
@@ -1395,18 +1480,111 @@ function App() {
         <>
           <div className="dialog-overlay" onClick={() => setShowPremiumModal(false)} />
           <div className="dialog-content">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Activar Premium</h2>
-            <p className="text-sm text-slate-500 mb-4">Filtros avanzados, dashboard, edición y backup.</p>
-            <input type="password" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Clave Premium" />
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Activar Suscripción Premium</h2>
+            <p className="text-sm text-slate-500 mb-4">Ingresa tu token premium (QBP/QBP2).</p>
+            <input type="text" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Token Premium" />
             <div className="flex gap-3 mt-4">
-              <button className="btn-primary flex-1" onClick={() => {
-                if (premiumKeyInput.trim() !== PREMIUM_ACCESS_KEY) return showNotice("Clave incorrecta", "Error");
+              <button className="btn-primary flex-1" onClick={async () => {
+                const check = await validatePremiumToken(premiumKeyInput.trim());
+                if (!check.valid) return showNotice(`Token premium inválido: ${check.reason}`, "Error");
                 setIsPremiumUnlocked(true);
+                localStorage.setItem(STORAGE_KEYS.premiumToken, premiumKeyInput.trim());
                 setShowPremiumModal(false);
                 setPremiumKeyInput("");
                 showNotice("Premium activado", "Éxito");
               }}>Activar</button>
               <button className="btn-secondary" onClick={() => setShowPremiumModal(false)}>Cancelar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de opciones */}
+      {showOptionsModal && (
+        <>
+          <div className="dialog-overlay" onClick={() => setShowOptionsModal(false)} />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-4">Opciones</h2>
+            <div className="space-y-5">
+              <section>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Subir archivos</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="btn-primary cursor-pointer">
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+                    {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
+                    Subir Logística
+                  </label>
+                  <label className="btn-secondary cursor-pointer">
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
+                    <UploadSimple size={20} />
+                    Subir Transportes
+                  </label>
+                  <label className="btn-secondary cursor-pointer">
+                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                    <UploadSimple size={20} />
+                    Logo
+                  </label>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Modificar tablas</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button onClick={() => { setShowClientModal(true); setShowOptionsModal(false); }} className="btn-secondary"><Plus size={18} />Cliente</button>
+                  <button onClick={handleInsertEmptyRow} className="btn-secondary"><Plus size={18} />Fila vacía</button>
+                  <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Acciones de app</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button onClick={() => { setExportSettings(prev => ({ ...prev, showModal: true })); setShowOptionsModal(false); }} className="btn-primary"><FileXls size={20} weight="bold" />Exportar Reporte</button>
+                  <button
+                    onClick={() => {
+                      if (isPremiumUnlocked) {
+                        setIsPremiumUnlocked(false);
+                        localStorage.removeItem(STORAGE_KEYS.premiumToken);
+                      } else {
+                        setShowPremiumModal(true);
+                      }
+                    }}
+                    className="btn-secondary"
+                  >
+                    {isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}
+                  </button>
+                </div>
+              </section>
+            </div>
+            <div className="mt-4">
+              <button className="btn-secondary w-full justify-center" onClick={() => setShowOptionsModal(false)}>Cerrar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de premium expirado al abrir */}
+      {showPremiumExpiredModal && (
+        <>
+          <div className="dialog-overlay" />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Suscripción Premium vencida</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Tu suscripción premium terminó ({premiumExpiredReason || "caducada"}). Puedes renovar ahora o continuar usando la app sin premium.
+            </p>
+            <div className="flex gap-3">
+              <button
+                className="btn-primary flex-1"
+                onClick={() => {
+                  window.open(RENEW_PAGE_URL, "_blank", "noopener,noreferrer");
+                  setShowPremiumExpiredModal(false);
+                }}
+              >
+                Renovar suscripción
+              </button>
+              <button className="btn-secondary flex-1" onClick={() => setShowPremiumExpiredModal(false)}>
+                Usar sin premium
+              </button>
             </div>
           </div>
         </>
