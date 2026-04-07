@@ -280,23 +280,31 @@ app.whenReady().then(async () => {
 
   // 2. VERIFICAR TOKEN Y CADUCIDAD BIMESTRAL
   const license = await ensureActiveLicense(hwID);
-  if (!license.valid) {
+  let activeLicense = license;
+  if (!activeLicense.valid) {
     const choice = dialog.showMessageBoxSync({
       type: 'warning',
       title: 'Licencia vencida',
       message: 'Tu licencia se terminó y la aplicación quedará bloqueada.',
-      detail: `Detalle: ${license.reason || 'Token inválido.'}\n\nRenueva en la página oficial para volver a activar la app.`,
-      buttons: ['Renovar licencia', 'Cerrar app'],
+      detail: `Detalle: ${activeLicense.reason || 'Token inválido.'}\n\nRenueva en la página oficial y después ingresa tu token para activar la app.`,
+      buttons: ['Renovar e ingresar token', 'Cerrar app'],
       defaultId: 0,
       cancelId: 1,
     });
     if (choice === 0) {
       await shell.openExternal(RENEW_PAGE_URL);
+      activeLicense = await ensureActiveLicense(hwID);
+      if (!activeLicense.valid) {
+        dialog.showErrorBox('Licencia inválida', `No fue posible activar la licencia.\n\nDetalle: ${activeLicense.reason || 'Token inválido.'}`);
+        app.quit();
+        return;
+      }
+    } else {
+      app.quit();
+      return;
     }
-    app.quit();
-    return;
   }
-  process.env.QUIMBAR_LICENSE_TOKEN = license.token;
+  process.env.QUIMBAR_LICENSE_TOKEN = activeLicense.token;
   process.env.QUIMBAR_MACHINE_ID = hwID;
 
   // 3. SI LA LICENCIA ES VÁLIDA, SE ACTIVA EL BACKEND
