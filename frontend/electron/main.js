@@ -197,8 +197,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function waitForBackendReady() {
   const maxAttempts = 60;
   const urlsToProbe = [
-    'http://127.0.0.1:8000/api/totals',
-    'http://127.0.0.1:8000/totals',
+    'http://127.0.0.1:8000/api/',
+    'http://127.0.0.1:8000/api/license/verify',
+    'http://127.0.0.1:8000/api/logistica/records',
   ];
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
