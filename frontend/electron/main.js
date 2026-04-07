@@ -8,7 +8,7 @@ const { machineIdSync } = require('node-machine-id');
 const isDev = !app.isPackaged;
 
 // --- CONFIGURACIÓN DE LICENCIA ---
-const SECRET_KEY = 'TuClavePrivadaQuimbar2026';
+const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
 const ALGORITHM = 'aes-256-cbc';
 const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionCruces');
 const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
@@ -64,8 +64,17 @@ function validateToken(token) {
   return { valid: true, expiryDate };
 }
 
+function generateTokenForDate(expiryCompact) {
+  const signature = crypto.createHmac('sha256', SECRET_KEY).update(expiryCompact).digest('hex').slice(0, 12);
+  return `QBM.${expiryCompact}.${signature}`;
+}
+
 function showTokenPrompt(message) {
   return new Promise((resolve) => {
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 2);
+    const compact = `${nextMonth.getUTCFullYear()}${String(nextMonth.getUTCMonth() + 1).padStart(2, '0')}${String(nextMonth.getUTCDate()).padStart(2, '0')}`;
+    const exampleToken = generateTokenForDate(compact);
     const tokenWindow = new BrowserWindow({
       width: 520,
       height: 340,
@@ -79,6 +88,7 @@ function showTokenPrompt(message) {
       <h2>Licencia requerida</h2>
       <p>${message}</p>
       <p>Su token ha caducado. Por favor, contacte al soporte para renovar su suscripción.</p>
+      <p style="font-size:12px;color:#64748b;">Formato esperado: QBM.YYYYMMDD.FIRMA<br/>Ejemplo (solo referencia): ${exampleToken}</p>
       <input id="token" style="width:100%;padding:10px;margin-top:12px;" placeholder="Ingrese nuevo token"/>
       <button id="save" style="margin-top:12px;padding:10px 14px;">Activar token</button>
       <script>
@@ -104,8 +114,17 @@ async function ensureActiveLicense(hwID) {
     }
   }
 
-  const enteredToken = await showTokenPrompt('La licencia no está activa o venció.');
-  const checked = validateToken(enteredToken);
+  let checked = { valid: false, reason: 'Token inválido' };
+  let enteredToken = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    enteredToken = await showTokenPrompt(
+      attempt === 0
+        ? 'La licencia no está activa o venció.'
+        : `Token inválido (${checked.reason}). Intente nuevamente.`
+    );
+    checked = validateToken(enteredToken);
+    if (checked.valid) break;
+  }
   if (!checked.valid) return { valid: false, reason: checked.reason };
 
   if (!fs.existsSync(LICENSE_FOLDER)) fs.mkdirSync(LICENSE_FOLDER, { recursive: true });
