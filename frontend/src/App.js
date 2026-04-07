@@ -408,6 +408,7 @@ function App() {
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("Todos");
   const [showClientModal, setShowClientModal] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -992,27 +993,9 @@ function App() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <label className="btn-primary cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
-              {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
-              Subir Asap Logística
-            </label>
-            <label className="btn-secondary cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
-              <UploadSimple size={20} />
-              Subir Transportistas
-            </label>
-            <label className="btn-secondary cursor-pointer">
-              <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-              <UploadSimple size={20} />
-              Logo
-            </label>
-            <button onClick={() => setExportSettings(prev => ({ ...prev, showModal: true }))} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
-            <button onClick={() => setShowClientModal(true)} className="btn-secondary"><Plus size={18} />Cliente</button>
-            <button onClick={handleInsertEmptyRow} className="btn-secondary"><Plus size={18} />Fila vacía</button>
-            <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
-            <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-            <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
+            <button onClick={() => setShowOptionsModal(true)} className="btn-primary">
+              <Files size={20} weight="duotone" />Opciones
+            </button>
           </div>
         </div>
       </header>
@@ -1413,6 +1396,42 @@ function App() {
                 showNotice("Premium activado", "Éxito");
               }}>Activar</button>
               <button className="btn-secondary" onClick={() => setShowPremiumModal(false)}>Cancelar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de opciones */}
+      {showOptionsModal && (
+        <>
+          <div className="dialog-overlay" onClick={() => setShowOptionsModal(false)} />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-4">Opciones</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="btn-primary cursor-pointer">
+                <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+                {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
+                Subir Asap Logística
+              </label>
+              <label className="btn-secondary cursor-pointer">
+                <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
+                <UploadSimple size={20} />
+                Subir Transportistas
+              </label>
+              <label className="btn-secondary cursor-pointer">
+                <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                <UploadSimple size={20} />
+                Logo
+              </label>
+              <button onClick={() => { setExportSettings(prev => ({ ...prev, showModal: true })); setShowOptionsModal(false); }} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
+              <button onClick={() => { setShowClientModal(true); setShowOptionsModal(false); }} className="btn-secondary"><Plus size={18} />Cliente</button>
+              <button onClick={handleInsertEmptyRow} className="btn-secondary"><Plus size={18} />Fila vacía</button>
+              <button onClick={handleClearAllData} className="btn-danger" disabled={clearingAll}>{clearingAll ? <SpinnerGap className="spinner" size={20} /> : <Trash size={20} />}Borrar todo</button>
+              <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+              <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
+            </div>
+            <div className="mt-4">
+              <button className="btn-secondary w-full justify-center" onClick={() => setShowOptionsModal(false)}>Cerrar</button>
             </div>
           </div>
         </>
