@@ -50,13 +50,33 @@ function addTwoMonths(dateInput) {
   return d;
 }
 
-function validateToken(token) {
-  if (!token?.startsWith('QBM.')) return { valid: false, reason: 'Formato inválido' };
+function machineHash(machineId) {
+  return crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 12);
+}
+
+function validateToken(token, hwID) {
+  if (!token?.startsWith('QBM.') && !token?.startsWith('QBM2.')) return { valid: false, reason: 'Formato inválido' };
   const parts = token.split('.');
-  if (parts.length !== 3) return { valid: false, reason: 'Formato inválido' };
-  const expiryCompact = parts[1];
-  const signature = parts[2];
-  const expected = crypto.createHmac('sha256', SECRET_KEY).update(expiryCompact).digest('hex').slice(0, 12);
+  const tokenVersion = parts[0];
+  let expiryCompact = '';
+  let signature = '';
+  let payload = '';
+
+  if (tokenVersion === 'QBM2') {
+    if (parts.length !== 4) return { valid: false, reason: 'Formato QBM2 inválido' };
+    expiryCompact = parts[1];
+    const tokenMachineHash = parts[2];
+    signature = parts[3];
+    if (hwID && tokenMachineHash !== machineHash(hwID)) return { valid: false, reason: 'Token no pertenece a esta computadora' };
+    payload = `${expiryCompact}.${tokenMachineHash}`;
+  } else {
+    if (parts.length !== 3) return { valid: false, reason: 'Formato QBM inválido' };
+    expiryCompact = parts[1];
+    signature = parts[2];
+    payload = expiryCompact;
+  }
+
+  const expected = crypto.createHmac('sha256', SECRET_KEY).update(payload).digest('hex').slice(0, 12);
   if (expected !== signature) return { valid: false, reason: 'Firma inválida' };
   const expiryDate = new Date(`${expiryCompact.slice(0, 4)}-${expiryCompact.slice(4, 6)}-${expiryCompact.slice(6, 8)}T23:59:59Z`);
   if (Number.isNaN(expiryDate.getTime())) return { valid: false, reason: 'Fecha inválida' };
@@ -64,17 +84,19 @@ function validateToken(token) {
   return { valid: true, expiryDate };
 }
 
-function generateTokenForDate(expiryCompact) {
-  const signature = crypto.createHmac('sha256', SECRET_KEY).update(expiryCompact).digest('hex').slice(0, 12);
-  return `QBM.${expiryCompact}.${signature}`;
+function generateTokenForDate(expiryCompact, hwID) {
+  const hwHash = machineHash(hwID);
+  const payload = `${expiryCompact}.${hwHash}`;
+  const signature = crypto.createHmac('sha256', SECRET_KEY).update(payload).digest('hex').slice(0, 12);
+  return `QBM2.${expiryCompact}.${hwHash}.${signature}`;
 }
 
-function showTokenPrompt(message) {
+function showTokenPrompt(message, hwID) {
   return new Promise((resolve) => {
     const nextMonth = new Date();
     nextMonth.setMonth(nextMonth.getMonth() + 2);
     const compact = `${nextMonth.getUTCFullYear()}${String(nextMonth.getUTCMonth() + 1).padStart(2, '0')}${String(nextMonth.getUTCDate()).padStart(2, '0')}`;
-    const exampleToken = generateTokenForDate(compact);
+    const exampleToken = generateTokenForDate(compact, hwID);
     const tokenWindow = new BrowserWindow({
       width: 520,
       height: 340,
@@ -88,7 +110,8 @@ function showTokenPrompt(message) {
       <h2>Licencia requerida</h2>
       <p>${message}</p>
       <p>Su token ha caducado. Por favor, contacte al soporte para renovar su suscripción.</p>
-      <p style="font-size:12px;color:#64748b;">Formato esperado: QBM.YYYYMMDD.FIRMA<br/>Ejemplo (solo referencia): ${exampleToken}</p>
+      <p style="font-size:12px;color:#64748b;">Hardware ID: ${hwID}</p>
+      <p style="font-size:12px;color:#64748b;">Formato esperado: QBM2.YYYYMMDD.HW_HASH.FIRMA<br/>Ejemplo (solo referencia): ${exampleToken}</p>
       <input id="token" style="width:100%;padding:10px;margin-top:12px;" placeholder="Ingrese nuevo token"/>
       <button id="save" style="margin-top:12px;padding:10px 14px;">Activar token</button>
       <script>
@@ -107,7 +130,7 @@ function showTokenPrompt(message) {
 async function ensureActiveLicense(hwID) {
   const saved = decryptLicensePayload(hwID);
   if (saved?.token) {
-    const tokenStatus = validateToken(saved.token);
+    const tokenStatus = validateToken(saved.token, hwID);
     if (tokenStatus.valid) {
       const activatedAt = saved.activated_at ? new Date(saved.activated_at) : new Date();
       if (new Date() <= addTwoMonths(activatedAt)) return { valid: true, token: saved.token };
@@ -121,8 +144,8 @@ async function ensureActiveLicense(hwID) {
       attempt === 0
         ? 'La licencia no está activa o venció.'
         : `Token inválido (${checked.reason}). Intente nuevamente.`
-    );
-    checked = validateToken(enteredToken);
+    , hwID);
+    checked = validateToken(enteredToken, hwID);
     if (checked.valid) break;
   }
   if (!checked.valid) return { valid: false, reason: checked.reason };
@@ -157,7 +180,11 @@ function startBackend() {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     cwd: path.dirname(backendExecutablePath),
-    env: { ...process.env, QUIMBAR_LICENSE_TOKEN: process.env.QUIMBAR_LICENSE_TOKEN || '' },
+    env: {
+      ...process.env,
+      QUIMBAR_LICENSE_TOKEN: process.env.QUIMBAR_LICENSE_TOKEN || '',
+      QUIMBAR_MACHINE_ID: process.env.QUIMBAR_MACHINE_ID || '',
+    },
   });
 
   backendProcess.once('error', (error) => {
@@ -229,6 +256,7 @@ app.whenReady().then(async () => {
     return;
   }
   process.env.QUIMBAR_LICENSE_TOKEN = license.token;
+  process.env.QUIMBAR_MACHINE_ID = hwID;
 
   // 3. SI LA LICENCIA ES VÁLIDA, SE ACTIVA EL BACKEND
   startBackend();
