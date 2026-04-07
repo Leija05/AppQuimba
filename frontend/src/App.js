@@ -35,7 +35,6 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { saveAs } from "file-saver";
-import CryptoJS from "crypto-js";
 
 const STORAGE_KEYS = {
   premium: "quimbar-premium-unlocked",
@@ -79,7 +78,22 @@ const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "curre
 const formatDate = (dateStr) => (!dateStr ? "-" : new Date(dateStr).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" }));
 const toNumber = (value) => Number.parseFloat(value || 0) || 0;
 const todayISO = () => new Date().toISOString().split("T")[0];
-const validatePremiumToken = (token) => {
+const hmacSha256Hex = async (payload, secret) => {
+  const enc = new TextEncoder();
+  const key = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await window.crypto.subtle.sign("HMAC", key, enc.encode(payload));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const validatePremiumToken = async (token) => {
   if (!token) return { valid: false, reason: "Token vacío" };
   const normalized = token.trim();
   const parts = normalized.split(".");
@@ -105,7 +119,7 @@ const validatePremiumToken = (token) => {
   const expiryDate = new Date(`${expiryCompact.slice(0, 4)}-${expiryCompact.slice(4, 6)}-${expiryCompact.slice(6, 8)}T23:59:59Z`);
   if (Number.isNaN(expiryDate.getTime())) return { valid: false, reason: "Fecha inválida" };
 
-  const expected = CryptoJS.HmacSHA256(payload, PREMIUM_TOKEN_SECRET).toString(CryptoJS.enc.Hex).slice(0, 12);
+  const expected = (await hmacSha256Hex(payload, PREMIUM_TOKEN_SECRET)).slice(0, 12);
   if (expected !== signature) return { valid: false, reason: "Firma inválida" };
   if (new Date() > expiryDate) return { valid: false, reason: "Suscripción premium caducada" };
   return { valid: true, expiryDate };
@@ -425,7 +439,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(STORAGE_KEYS.theme) === "dark");
-  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => validatePremiumToken(localStorage.getItem(STORAGE_KEYS.premiumToken) || "").valid);
+  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => localStorage.getItem(STORAGE_KEYS.premium) === "1");
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumKeyInput, setPremiumKeyInput] = useState("");
   const [showPremiumExpiredModal, setShowPremiumExpiredModal] = useState(false);
@@ -482,13 +496,19 @@ function App() {
   useEffect(() => {
     const storedToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
     if (!storedToken) return;
-    const status = validatePremiumToken(storedToken);
-    if (!status.valid) {
-      setIsPremiumUnlocked(false);
-      localStorage.removeItem(STORAGE_KEYS.premiumToken);
-      setPremiumExpiredReason(status.reason || "Suscripción premium caducada");
-      setShowPremiumExpiredModal(true);
-    }
+    let mounted = true;
+    validatePremiumToken(storedToken).then((status) => {
+      if (!mounted) return;
+      if (!status.valid) {
+        setIsPremiumUnlocked(false);
+        localStorage.removeItem(STORAGE_KEYS.premiumToken);
+        setPremiumExpiredReason(status.reason || "Suscripción premium caducada");
+        setShowPremiumExpiredModal(true);
+      } else {
+        setIsPremiumUnlocked(true);
+      }
+    });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
@@ -1443,8 +1463,8 @@ function App() {
             <p className="text-sm text-slate-500 mb-4">Ingresa tu token premium (QBP/QBP2).</p>
             <input type="text" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Token Premium" />
             <div className="flex gap-3 mt-4">
-              <button className="btn-primary flex-1" onClick={() => {
-                const check = validatePremiumToken(premiumKeyInput.trim());
+              <button className="btn-primary flex-1" onClick={async () => {
+                const check = await validatePremiumToken(premiumKeyInput.trim());
                 if (!check.valid) return showNotice(`Token premium inválido: ${check.reason}`, "Error");
                 setIsPremiumUnlocked(true);
                 localStorage.setItem(STORAGE_KEYS.premiumToken, premiumKeyInput.trim());
