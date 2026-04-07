@@ -28,7 +28,6 @@ import {
   LockOpen,
   FloppyDisk,
   ArrowsClockwise,
-  Download,
   Copy,
   ChartLine
 } from "@phosphor-icons/react";
@@ -1031,18 +1030,6 @@ function App() {
     showNotice("Filtro favorito guardado", "Éxito");
   };
 
-  const handleExportBackup = () => {
-    const payload = { 
-      version: 1, 
-      exported_at: new Date().toISOString(), 
-      logistica: { records: logisticaRecords, uploads: logisticaUploads },
-      transportista: { records: transportistaRecords, uploads: transportistaUploads },
-      favoriteFilters 
-    };
-    saveAs(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `quimbar_backup_${todayISO()}.json`);
-    showNotice("Backup exportado", "Éxito");
-  };
-
   return (
     <div className={`app-container ${darkMode ? "dark-theme" : ""}`}>
       <header className="app-header">
@@ -1060,7 +1047,20 @@ function App() {
                   : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transporte"}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="theme-switch" role="group" aria-label="Cambiar tema">
+              <Sun size={16} className={!darkMode ? "theme-icon active" : "theme-icon"} />
+              <button
+                type="button"
+                onClick={() => setDarkMode((prev) => !prev)}
+                className={`theme-switch-track ${darkMode ? "dark" : ""}`}
+                aria-label={darkMode ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+                aria-pressed={darkMode}
+              >
+                <span className="theme-switch-thumb" />
+              </button>
+              <Moon size={16} className={darkMode ? "theme-icon active" : "theme-icon"} />
+            </div>
             <button onClick={() => setShowOptionsModal(true)} className="btn-primary">
               <Files size={20} weight="duotone" />Opciones
             </button>
@@ -1220,19 +1220,10 @@ function App() {
           </div>
         )}
 
-        {/* Barra de búsqueda y filtros */}
+        {/* Barra principal */}
         <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
           <p className="text-sm text-slate-500">{displayedRecords.length} registros en {isLogistica ? "Logística" : "Transporte"} • Cliente: {selectedClient}</p>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="search-input-wrapper">
-              <MagnifyingGlass size={18} className="text-slate-400" />
-              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
-            </div>
-            <div className="filter-chip-group">
-              {["Todos", "Pendiente", "Pagado"].map((f) => (
-                <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
               <Plus size={20} />Añadir Registro ({isLogistica ? "Logística" : "Transporte"})
             </button>
@@ -1296,22 +1287,52 @@ function App() {
         {isPremiumUnlocked && (
           <div className="premium-toolbar mb-4">
             <div className="premium-filters">
+              <div className="search-input-wrapper">
+                <MagnifyingGlass size={18} className="text-slate-400" />
+                <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
+              </div>
+              <div className="filter-chip-group">
+                {["Todos", "Pendiente", "Pagado"].map((f) => (
+                  <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
+                ))}
+              </div>
               <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
               <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
               <input type="text" className="form-input" placeholder="Transportista / Cliente" value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
               <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
               <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
-              <select className="form-input" onChange={(e) => { const f = favoriteFilters.find((x) => x.id === e.target.value); if (f) setPremiumFilters(f.filters); }} defaultValue="">
-                <option value="">Filtros favoritos</option>
+              <select
+                className="form-input"
+                onChange={(e) => {
+                  if (!e.target.value) {
+                    setPremiumFilters({ from: "", to: "", field: "", servicio: "", status: "Todos" });
+                    setSearchTerm("");
+                    setStatusFilter("Todos");
+                    return;
+                  }
+                  const f = favoriteFilters.find((x) => x.id === e.target.value);
+                  if (f) setPremiumFilters(f.filters);
+                }}
+                defaultValue=""
+              >
+                <option value="">Sin filtro guardado</option>
                 {favoriteFilters.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
               </select>
             </div>
-            <div className="premium-bulk">
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
-              <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
-              <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
-              <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
-              <button className="btn-secondary" onClick={handleExportBackup}><Download size={16} />Backup</button>
+          </div>
+        )}
+
+        {isPremiumUnlocked && selectedIds.length > 0 && (
+          <div className="selection-action-bar">
+            <div className="selection-action-content">
+              <p className="selection-counter">{selectedIds.length} seleccionados</p>
+              <div className="premium-bulk">
+                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
+                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
+                <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
+                <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
+                <button className="btn-secondary" onClick={() => setSelectedIds([])}><X size={16} />Cancelar</button>
+              </div>
             </div>
           </div>
         )}
@@ -1518,8 +1539,7 @@ function App() {
               <section>
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Acciones de app</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button onClick={() => { setExportSettings(prev => ({ ...prev, showModal: true })); setShowOptionsModal(false); }} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
-                  <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+                  <button onClick={() => { setExportSettings(prev => ({ ...prev, showModal: true })); setShowOptionsModal(false); }} className="btn-primary"><FileXls size={20} weight="bold" />Exportar Reporte</button>
                   <button
                     onClick={() => {
                       if (isPremiumUnlocked) {
