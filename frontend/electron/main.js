@@ -169,26 +169,56 @@ function resolveBackendExecutablePath() {
   return path.join(process.resourcesPath, 'resources', 'quimbar-server.exe');
 }
 
-function startBackend() {
+function resolveBackendLaunchConfig() {
+  if (isDev) {
+    const backendScriptPath = path.join(__dirname, '../../backend/server.py');
+    if (fs.existsSync(backendScriptPath)) {
+      const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
+      return {
+        command: pythonCmd,
+        args: [backendScriptPath],
+        cwd: path.dirname(backendScriptPath),
+      };
+    }
+  }
+
   const backendExecutablePath = resolveBackendExecutablePath();
-  if (!fs.existsSync(backendExecutablePath)) {
-    backendStartupIssue = `No existe quimbar-server.exe en: ${backendExecutablePath}`;
+  return {
+    command: backendExecutablePath,
+    args: [],
+    cwd: path.dirname(backendExecutablePath),
+    executablePath: backendExecutablePath,
+  };
+}
+
+function startBackend() {
+  const backendConfig = resolveBackendLaunchConfig();
+  if (backendConfig.executablePath && !fs.existsSync(backendConfig.executablePath)) {
+    backendStartupIssue = `No existe quimbar-server.exe en: ${backendConfig.executablePath}`;
     return;
   }
 
-  backendProcess = spawn(backendExecutablePath, [], {
+  backendProcess = spawn(backendConfig.command, backendConfig.args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
-    cwd: path.dirname(backendExecutablePath),
+    cwd: backendConfig.cwd,
     env: {
       ...process.env,
       QUIMBAR_LICENSE_TOKEN: process.env.QUIMBAR_LICENSE_TOKEN || '',
       QUIMBAR_MACHINE_ID: process.env.QUIMBAR_MACHINE_ID || '',
+      PYTHONUNBUFFERED: '1',
     },
   });
 
   backendProcess.once('error', (error) => {
     backendStartupIssue = `Error al iniciar: ${error?.message || String(error)}`;
+  });
+
+  backendProcess.stderr?.on('data', (chunk) => {
+    const text = String(chunk || '').trim();
+    if (text) {
+      backendStartupIssue = text.slice(0, 1500);
+    }
   });
 }
 
