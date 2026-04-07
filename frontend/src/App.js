@@ -35,16 +35,19 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { saveAs } from "file-saver";
+import CryptoJS from "crypto-js";
 
 const STORAGE_KEYS = {
   premium: "quimbar-premium-unlocked",
+  premiumToken: "quimbar-premium-token",
   theme: "quimbar-theme",
   favoriteFilters: "quimbar-favorite-filters",
   logo: "quimbar-company-logo",
   companyName: "quimbar-company-name"
 };
 
-const PREMIUM_ACCESS_KEY = process.env.REACT_APP_PREMIUM_KEY;
+const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET || "QuimbarPremium2026";
+const RENEW_PAGE_URL = "https://leija05.github.io/Venta/";
 const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL).replace(/\/+$/, "");
 const API_CANDIDATES = BACKEND_URL.endsWith("/api")
   ? [BACKEND_URL, BACKEND_URL.replace(/\/api$/, "")]
@@ -76,6 +79,38 @@ const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "curre
 const formatDate = (dateStr) => (!dateStr ? "-" : new Date(dateStr).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" }));
 const toNumber = (value) => Number.parseFloat(value || 0) || 0;
 const todayISO = () => new Date().toISOString().split("T")[0];
+const validatePremiumToken = (token) => {
+  if (!token) return { valid: false, reason: "Token vacío" };
+  const normalized = token.trim();
+  const parts = normalized.split(".");
+  const version = parts[0];
+  if (!["QBP", "QBP2"].includes(version)) return { valid: false, reason: "Formato inválido" };
+
+  let expiryCompact = "";
+  let signature = "";
+  let payload = "";
+  if (version === "QBP2") {
+    if (parts.length !== 4) return { valid: false, reason: "Formato QBP2 inválido" };
+    expiryCompact = parts[1];
+    const hwHash = parts[2];
+    signature = parts[3];
+    payload = `${expiryCompact}.${hwHash}`;
+  } else {
+    if (parts.length !== 3) return { valid: false, reason: "Formato QBP inválido" };
+    expiryCompact = parts[1];
+    signature = parts[2];
+    payload = expiryCompact;
+  }
+
+  const expiryDate = new Date(`${expiryCompact.slice(0, 4)}-${expiryCompact.slice(4, 6)}-${expiryCompact.slice(6, 8)}T23:59:59Z`);
+  if (Number.isNaN(expiryDate.getTime())) return { valid: false, reason: "Fecha inválida" };
+
+  const expected = CryptoJS.HmacSHA256(payload, PREMIUM_TOKEN_SECRET).toString(CryptoJS.enc.Hex).slice(0, 12);
+  if (expected !== signature) return { valid: false, reason: "Firma inválida" };
+  if (new Date() > expiryDate) return { valid: false, reason: "Suscripción premium caducada" };
+  return { valid: true, expiryDate };
+};
+
 const readJSON = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
@@ -390,9 +425,11 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(STORAGE_KEYS.theme) === "dark");
-  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => localStorage.getItem(STORAGE_KEYS.premium) === "1");
+  const [isPremiumUnlocked, setIsPremiumUnlocked] = useState(() => validatePremiumToken(localStorage.getItem(STORAGE_KEYS.premiumToken) || "").valid);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumKeyInput, setPremiumKeyInput] = useState("");
+  const [showPremiumExpiredModal, setShowPremiumExpiredModal] = useState(false);
+  const [premiumExpiredReason, setPremiumExpiredReason] = useState("");
   const [premiumFilters, setPremiumFilters] = useState({ from: "", to: "", field: "", servicio: "", status: "Todos" });
   const [selectedIds, setSelectedIds] = useState([]);
   const [serverBooting, setServerBooting] = useState(true);
@@ -442,6 +479,17 @@ function App() {
   useEffect(() => localStorage.setItem(STORAGE_KEYS.premium, isPremiumUnlocked ? "1" : "0"), [isPremiumUnlocked]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.logo, companyLogo), [companyLogo]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.companyName, companyName), [companyName]);
+  useEffect(() => {
+    const storedToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
+    if (!storedToken) return;
+    const status = validatePremiumToken(storedToken);
+    if (!status.valid) {
+      setIsPremiumUnlocked(false);
+      localStorage.removeItem(STORAGE_KEYS.premiumToken);
+      setPremiumExpiredReason(status.reason || "Suscripción premium caducada");
+      setShowPremiumExpiredModal(true);
+    }
+  }, []);
 
   useEffect(() => {
     const loadFromBackend = async () => {
@@ -1391,13 +1439,15 @@ function App() {
         <>
           <div className="dialog-overlay" onClick={() => setShowPremiumModal(false)} />
           <div className="dialog-content">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Activar Premium</h2>
-            <p className="text-sm text-slate-500 mb-4">Filtros avanzados, dashboard, edición y backup.</p>
-            <input type="password" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Clave Premium" />
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Activar Suscripción Premium</h2>
+            <p className="text-sm text-slate-500 mb-4">Ingresa tu token premium (QBP/QBP2).</p>
+            <input type="text" value={premiumKeyInput} onChange={(e) => setPremiumKeyInput(e.target.value)} className="form-input w-full" placeholder="Token Premium" />
             <div className="flex gap-3 mt-4">
               <button className="btn-primary flex-1" onClick={() => {
-                if (premiumKeyInput.trim() !== PREMIUM_ACCESS_KEY) return showNotice("Clave incorrecta", "Error");
+                const check = validatePremiumToken(premiumKeyInput.trim());
+                if (!check.valid) return showNotice(`Token premium inválido: ${check.reason}`, "Error");
                 setIsPremiumUnlocked(true);
+                localStorage.setItem(STORAGE_KEYS.premiumToken, premiumKeyInput.trim());
                 setShowPremiumModal(false);
                 setPremiumKeyInput("");
                 showNotice("Premium activado", "Éxito");
@@ -1450,12 +1500,51 @@ function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button onClick={() => { setExportSettings(prev => ({ ...prev, showModal: true })); setShowOptionsModal(false); }} className="btn-primary"><Download size={20} weight="bold" />Exportar Reporte</button>
                   <button onClick={() => setDarkMode((prev) => !prev)} className="btn-theme">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-                  <button onClick={() => (isPremiumUnlocked ? setIsPremiumUnlocked(false) : setShowPremiumModal(true))} className="btn-secondary">{isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}</button>
+                  <button
+                    onClick={() => {
+                      if (isPremiumUnlocked) {
+                        setIsPremiumUnlocked(false);
+                        localStorage.removeItem(STORAGE_KEYS.premiumToken);
+                      } else {
+                        setShowPremiumModal(true);
+                      }
+                    }}
+                    className="btn-secondary"
+                  >
+                    {isPremiumUnlocked ? <LockOpen size={20} /> : <Lock size={20} />}{isPremiumUnlocked ? "Premium" : "Activar"}
+                  </button>
                 </div>
               </section>
             </div>
             <div className="mt-4">
               <button className="btn-secondary w-full justify-center" onClick={() => setShowOptionsModal(false)}>Cerrar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de premium expirado al abrir */}
+      {showPremiumExpiredModal && (
+        <>
+          <div className="dialog-overlay" />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Suscripción Premium vencida</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Tu suscripción premium terminó ({premiumExpiredReason || "caducada"}). Puedes renovar ahora o continuar usando la app sin premium.
+            </p>
+            <div className="flex gap-3">
+              <button
+                className="btn-primary flex-1"
+                onClick={() => {
+                  window.open(RENEW_PAGE_URL, "_blank", "noopener,noreferrer");
+                  setShowPremiumExpiredModal(false);
+                }}
+              >
+                Renovar suscripción
+              </button>
+              <button className="btn-secondary flex-1" onClick={() => setShowPremiumExpiredModal(false)}>
+                Usar sin premium
+              </button>
             </div>
           </div>
         </>
