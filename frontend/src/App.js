@@ -1282,6 +1282,7 @@ function App() {
           </div>
         )}
         {activeSection === "principal" && (
+        <>
         {/* Pestañas principales */}
         <div className="hidden md:flex border-b border-slate-300 mb-6">
           {TABS.map((tab) => (
@@ -1668,6 +1669,7 @@ function App() {
             </div>
           )}
         </div>
+        </>
         )}
       </main>
       </div>
