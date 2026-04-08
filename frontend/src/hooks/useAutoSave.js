@@ -9,7 +9,7 @@ export const useAutoSave = (saveFunction) => {
     return saved === null ? true : saved === 'true';
   });
 
-  const [interval, setInterval] = useState(() => {
+  const [interval, setAutoSaveInterval] = useState(() => {
     return localStorage.getItem(STORAGE_KEY_INTERVAL) || '300000';
   });
 
@@ -21,7 +21,7 @@ export const useAutoSave = (saveFunction) => {
   }, []);
 
   const updateInterval = useCallback((newInterval) => {
-    setInterval(newInterval);
+    setAutoSaveInterval(newInterval);
     localStorage.setItem(STORAGE_KEY_INTERVAL, newInterval);
   }, []);
 
@@ -37,9 +37,9 @@ export const useAutoSave = (saveFunction) => {
       }
     };
 
-    const intervalId = setInterval(performSave, parseInt(interval));
+    const intervalId = window.setInterval(performSave, parseInt(interval, 10));
 
-    return () => clearInterval(intervalId);
+    return () => window.clearInterval(intervalId);
   }, [enabled, interval, saveFunction]);
 
   return {

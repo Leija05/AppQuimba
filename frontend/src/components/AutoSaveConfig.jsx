@@ -21,7 +21,7 @@ const AutoSaveConfig = ({ onSave }) => {
     return saved === null ? true : saved === 'true';
   });
 
-  const [interval, setInterval] = useState(() => {
+  const [interval, setAutoSaveInterval] = useState(() => {
     return localStorage.getItem(STORAGE_KEY_INTERVAL) || '300000';
   });
 
@@ -85,7 +85,7 @@ const AutoSaveConfig = ({ onSave }) => {
               <Label htmlFor="autosave-interval" className="text-sm font-medium text-slate-700">
                 Frecuencia de guardado
               </Label>
-              <Select value={interval} onValueChange={setInterval}>
+              <Select value={interval} onValueChange={setAutoSaveInterval}>
                 <SelectTrigger id="autosave-interval" className="w-full">
                   <SelectValue placeholder="Selecciona un intervalo" />
                 </SelectTrigger>

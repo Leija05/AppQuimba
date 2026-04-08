@@ -4,11 +4,13 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 import os
 import logging
+import smtplib
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from io import BytesIO
 import asyncio
 import json
@@ -62,6 +64,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 LICENSE_SECRET = os.environ.get("QUIMBAR_LICENSE_SECRET", "QuimbarToken2026")
+APP_NAME = "Gestión Logística y de Transportes"
+APP_DESCRIPTION = "Solución profesional para control logístico"
 
 
 # ============== Helper Functions ==============
@@ -290,6 +294,20 @@ class ClientCreate(BaseModel):
     nombre: str
     correo: str = ""
     telefono: str = ""
+
+
+class ClientUpdate(BaseModel):
+    nombre: Optional[str] = None
+    correo: Optional[str] = None
+    telefono: Optional[str] = None
+
+
+class LicenseNotificationPayload(BaseModel):
+    machine_id: str
+    client_name: str
+    license_status: str
+    expiry_date: str
+    days_remaining: int
 
 
 # ============== LOGISTICA Routes ==============
@@ -875,6 +893,31 @@ async def create_client(data: ClientCreate):
     return client
 
 
+@api_router.put("/clients/{client_id}", response_model=Client)
+async def update_client(client_id: str, data: ClientUpdate):
+    async with _records_lock:
+        clients = await load_json(CLIENTS_FILE)
+        client_index = next((i for i, c in enumerate(clients) if c.get("id") == client_id), None)
+        if client_index is None:
+            raise HTTPException(status_code=404, detail="Client not found")
+
+        updated_fields = {k: v for k, v in data.model_dump().items() if v is not None}
+        clients[client_index] = {**clients[client_index], **updated_fields}
+        await save_json(CLIENTS_FILE, clients)
+        return clients[client_index]
+
+
+@api_router.delete("/clients/{client_id}")
+async def delete_client(client_id: str):
+    async with _records_lock:
+        clients = await load_json(CLIENTS_FILE)
+        filtered = [c for c in clients if c.get("id") != client_id]
+        if len(filtered) == len(clients):
+            raise HTTPException(status_code=404, detail="Client not found")
+        await save_json(CLIENTS_FILE, filtered)
+    return {"message": "Cliente eliminado"}
+
+
 @api_router.get("/license/verify")
 async def verify_license():
     token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
@@ -883,11 +926,58 @@ async def verify_license():
     return {"valid": valid, "reason": reason}
 
 
+@api_router.get("/license/server-time")
+async def get_server_time():
+    now = datetime.now(timezone.utc)
+    return {"server_time": now.isoformat(), "timestamp": int(now.timestamp())}
+
+
+@api_router.post("/license/notify")
+async def notify_license_expiration(payload: LicenseNotificationPayload):
+    sender = os.environ.get("EMAIL_SENDER", "")
+    password = os.environ.get("EMAIL_PASSWORD", "")
+    receiver = os.environ.get("EMAIL_RECEIVER", "")
+
+    if not sender or not password or not receiver:
+        return {"sent": False, "reason": "Email SMTP no configurado en variables de entorno"}
+
+    subject = "Alerta de licencia por expirar o caducada"
+    body = (
+        "Computadora con id:\n"
+        f"{payload.machine_id}\n\n"
+        "Nombre del cliente:\n"
+        f"{payload.client_name}\n\n"
+        "Estado de licencia:\n"
+        f"{payload.license_status}\n\n"
+        "Fecha de expiración:\n"
+        f"{payload.expiry_date}\n\n"
+        "Días restantes:\n"
+        f"{payload.days_remaining}\n\n"
+        "Atento a renovación."
+    )
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = receiver
+    message["Subject"] = subject
+    message.set_content(body)
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as smtp:
+            smtp.starttls()
+            smtp.login(sender, password)
+            smtp.send_message(message)
+        return {"sent": True}
+    except Exception as error:
+        logger.error("Error enviando correo de licencia: %s", error)
+        raise HTTPException(status_code=500, detail="No se pudo enviar notificación de licencia")
+
+
 # ============== Legacy/Common Routes ==============
 
 @api_router.get("/")
 async def root():
-    return {"message": "Gestión Logística y de Transportes API"}
+    return {"message": f"{APP_NAME} API", "description": APP_DESCRIPTION}
 
 
 # Include the router in the main app
