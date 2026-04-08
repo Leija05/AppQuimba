@@ -96,7 +96,7 @@ function showTokenPrompt(message, hwID, type = 'license') {
     const exampleToken = generateTokenForDate(compact, hwID, type);
     const tokenWindow = new BrowserWindow({
       width: 520,
-      height: 340,
+      height: 460,
       resizable: false,
       modal: true,
       show: true,
@@ -106,19 +106,32 @@ function showTokenPrompt(message, hwID, type = 'license') {
       <html><body style="font-family:sans-serif;padding:24px;">
       <h2>${type === 'premium' ? 'Suscripción premium' : 'Licencia requerida'}</h2>
       <p>${message}</p>
-      <p>Su ${type === 'premium' ? 'suscripción premium' : 'licencia'} ha caducado. Por favor, contacte al soporte para renovar.</p>
+      <p>${type === 'premium' ? 'Suscripción premium' : 'No tienes una licencia activa. Haz clic aquí para adquirir una.'}</p>
       <p style="font-size:12px;color:#64748b;">Hardware ID: ${hwID}</p>
       <p style="font-size:12px;color:#64748b;">Formato esperado: ${tokenPrefix}.YYYYMMDD.HW_HASH.FIRMA<br/>Ejemplo (solo referencia): ${exampleToken}</p>
+      <input id="username" style="width:100%;padding:10px;margin-top:8px;" placeholder="Nombre de usuario"/>
+      <input id="businessName" style="width:100%;padding:10px;margin-top:8px;" placeholder="Nombre completo o empresa"/>
       <input id="token" style="width:100%;padding:10px;margin-top:12px;" placeholder="Ingrese nuevo token"/>
-      <button id="save" style="margin-top:12px;padding:10px 14px;">Activar token</button>
+      <div style="display:flex;gap:8px; margin-top:12px;">
+        <button id="buy" style="padding:10px 14px;background:#002FA7;color:white;border:none;border-radius:8px;">Comprar licencia</button>
+        <button id="save" style="padding:10px 14px;">Activar token</button>
+      </div>
       <script>
       const {ipcRenderer} = require('electron');
-      document.getElementById('save').onclick = () => ipcRenderer.send('license-token-submitted', document.getElementById('token').value || '');
+      document.getElementById('buy').onclick = () => ipcRenderer.send('open-license-buy-page');
+      document.getElementById('save').onclick = () => ipcRenderer.send('license-token-submitted', {
+        token: document.getElementById('token').value || '',
+        username: document.getElementById('username').value || '',
+        businessName: document.getElementById('businessName').value || ''
+      });
       </script></body></html>`;
     tokenWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    ipcMain.once('license-token-submitted', (_, token) => {
+    ipcMain.once('open-license-buy-page', () => {
+      shell.openExternal(RENEW_PAGE_URL);
+    });
+    ipcMain.once('license-token-submitted', (_, payload) => {
       tokenWindow.close();
-      resolve((token || '').trim());
+      resolve(payload || { token: '', username: '', businessName: '' });
     });
   });
 }
@@ -132,12 +145,18 @@ async function ensureActiveLicense(hwID) {
 
   let checked = { valid: false, reason: 'Token inválido' };
   let enteredToken = '';
+  let onboardingInfo = { username: '', businessName: '' };
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    enteredToken = await showTokenPrompt(
+    const enteredPayload = await showTokenPrompt(
       attempt === 0
         ? 'La licencia no está activa o venció.'
         : `Token inválido (${checked.reason}). Intente nuevamente.`
     , hwID, 'license');
+    enteredToken = (enteredPayload?.token || '').trim();
+    onboardingInfo = {
+      username: enteredPayload?.username || onboardingInfo.username,
+      businessName: enteredPayload?.businessName || onboardingInfo.businessName,
+    };
     checked = validateToken(enteredToken, hwID, 'license');
     if (checked.valid) break;
   }
@@ -148,6 +167,8 @@ async function ensureActiveLicense(hwID) {
   const payload = {
     ...previous,
     license_token: enteredToken,
+    username: onboardingInfo.username || previous.username || '',
+    business_name: onboardingInfo.businessName || previous.business_name || '',
     license_activated_at: new Date().toISOString(),
     license_expires_at: checked.expiryDate.toISOString(),
   };

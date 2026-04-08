@@ -2,6 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import "@/App.css";
 import axios from "axios";
 import ExcelJS from 'exceljs';
+import DeveloperSignature from "@/components/DeveloperSignature";
+import AutoSaveConfig from "@/components/AutoSaveConfig";
+import LicensePurchasePrompt from "@/components/LicensePurchasePrompt";
+import PremiumDashboardLogistica from "@/components/PremiumDashboardLogistica";
+import PremiumDashboardTransportista from "@/components/PremiumDashboardTransportista";
+import { useAutoSave } from "@/hooks/useAutoSave";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -29,19 +35,27 @@ import {
   FloppyDisk,
   ArrowsClockwise,
   Copy,
-  ChartLine
+  ChartLine,
+  SidebarSimple,
+  Users,
+  Gear,
+  Crown,
+  List,
+  SquaresFour
 } from "@phosphor-icons/react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { saveAs } from "file-saver";
 
 const STORAGE_KEYS = {
-  premium: "quimbar-premium-unlocked",
-  premiumToken: "quimbar-premium-token",
-  theme: "quimbar-theme",
-  favoriteFilters: "quimbar-favorite-filters",
-  logo: "quimbar-company-logo",
-  companyName: "quimbar-company-name"
+  premium: "gestion-logistica-premium-unlocked",
+  premiumToken: "gestion-logistica-premium-token",
+  theme: "gestion-logistica-theme",
+  favoriteFilters: "gestion-logistica-favorite-filters",
+  logo: "gestion-logistica-company-logo",
+  companyName: "gestion-logistica-company-name",
+  sidebarCollapsed: "gestion-logistica-sidebar-collapsed",
+  firstLicenseSetup: "gestion-logistica-license-profile"
 };
 
 const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET || "QuimbarPremium2026";
@@ -163,6 +177,9 @@ const TRANSPORTE_COLUMN_LABELS = {
   total: "TOTAL",
   acciones: "ACCIONES"
 };
+
+const APP_NAME = "Gestión Logística y de Transportes";
+const APP_DESCRIPTION = "Solución profesional para control logístico";
 
 const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premiumEnabled, isLogistica) => {
   const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -454,9 +471,16 @@ function App() {
   const [showPremiumDashboard, setShowPremiumDashboard] = useState(false);
   const [activeLogisticaView, setActiveLogisticaView] = useState("archivo_principal");
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
-  const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || "QUIMBAR");
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || APP_NAME);
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("Todos");
+  const [activeSection, setActiveSection] = useState("principal");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === "1");
+  const [clientViewMode, setClientViewMode] = useState("lista");
+  const [editingClientId, setEditingClientId] = useState(null);
+  const [licenseProfile, setLicenseProfile] = useState(() => readJSON(STORAGE_KEYS.firstLicenseSetup, { username: "", businessName: "" }));
+  const [showLicenseOnboarding, setShowLicenseOnboarding] = useState(false);
+  const [licenseAlert, setLicenseAlert] = useState(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
@@ -492,6 +516,9 @@ function App() {
   useEffect(() => localStorage.setItem(STORAGE_KEYS.premium, isPremiumUnlocked ? "1" : "0"), [isPremiumUnlocked]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.logo, companyLogo), [companyLogo]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.companyName, companyName), [companyName]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, sidebarCollapsed ? "1" : "0"), [sidebarCollapsed]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.firstLicenseSetup, JSON.stringify(licenseProfile)), [licenseProfile]);
+  useEffect(() => { document.title = APP_NAME; }, []);
   useEffect(() => {
     const storedToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
     if (!storedToken) return;
@@ -631,6 +658,69 @@ function App() {
     setClients(clientsRes.data || []);
   };
 
+  const autoSave = useAutoSave(async () => {
+    if (backendAvailable) {
+      await reloadBackendData();
+    }
+  });
+
+  useEffect(() => {
+    const saveOnClose = () => {
+      if (backendAvailable) {
+        reloadBackendData().catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", saveOnClose);
+    return () => window.removeEventListener("beforeunload", saveOnClose);
+  }, [backendAvailable]);
+
+  const parseTokenExpiry = (token) => {
+    const parts = (token || "").split(".");
+    if (parts.length < 2) return null;
+    const compact = parts[1];
+    if (!/^\d{8}$/.test(compact)) return null;
+    return new Date(`${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}T23:59:59Z`);
+  };
+
+  useEffect(() => {
+    if (!licenseProfile.username || !licenseProfile.businessName) {
+      setShowLicenseOnboarding(true);
+    }
+  }, [licenseProfile]);
+
+  useEffect(() => {
+    const checkLicenseHealth = async () => {
+      const token = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
+      if (!token) {
+        setLicenseAlert({ level: "warning", text: "No tienes una licencia activa. Haz clic aquí para adquirir una." });
+        return;
+      }
+
+      try {
+        const serverTime = await apiRequest("get", "/license/server-time");
+        const now = new Date(serverTime.data.server_time);
+        const expiry = parseTokenExpiry(token);
+        if (!expiry) return;
+        const days = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        if (days < 0) {
+          setLicenseAlert({ level: "danger", text: "❌ Tu licencia ha expirado." });
+          await apiRequest("post", "/license/notify", { data: { machine_id: "desktop-app", client_name: licenseProfile.businessName || "Cliente", license_status: "Caducada", expiry_date: expiry.toISOString(), days_remaining: days } });
+        } else if (days <= 7) {
+          setLicenseAlert({ level: "warning", text: `⚠️ Tu licencia está por expirar en ${days} días.` });
+          await apiRequest("post", "/license/notify", { data: { machine_id: "desktop-app", client_name: licenseProfile.businessName || "Cliente", license_status: "Por expirar", expiry_date: expiry.toISOString(), days_remaining: days } });
+        } else {
+          setLicenseAlert(null);
+        }
+      } catch {
+        // ignore network/license notification errors
+      }
+    };
+
+    checkLicenseHealth();
+    const intervalId = window.setInterval(checkLicenseHealth, 24 * 60 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [licenseProfile.businessName]);
+
   const handleSaveRecord = async (data) => {
     setSaving(true);
     try {
@@ -657,7 +747,6 @@ function App() {
   };
 
   const handleDeleteRecord = async (id) => {
-    if (!isPremiumUnlocked) return showNotice("Borrar registros es Premium", "Premium");
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
     
     const basePath = activeApiBasePath;
@@ -797,7 +886,7 @@ function App() {
     totalRow.getCell(totalColIndex).font = { bold: true };
 
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `quimbar_${activeTab}_${transportExportMode}_${todayISO()}.xlsx`);
+    saveAs(new Blob([buffer]), `gestion_logistica_${activeTab}_${transportExportMode}_${todayISO()}.xlsx`);
     showNotice(`Excel de ${isLogistica ? "Logística" : "Transporte"} exportado`, "Éxito");
   };
 
@@ -893,7 +982,7 @@ function App() {
       doc.text(`Página ${i} de ${pageCount} - Generado el ${todayISO()}`, 14, doc.internal.pageSize.height - 10);
     }
 
-    doc.save(`quimbar_${activeTab}_pendientes_${todayISO()}.pdf`);
+    doc.save(`gestion_logistica_${activeTab}_pendientes_${todayISO()}.pdf`);
     showNotice("PDF exportado (solo pendientes)", "Éxito");
   };
 
@@ -1014,11 +1103,30 @@ function App() {
 
   const handleCreateClient = async () => {
     if (!clientForm.nombre.trim()) return showNotice("El nombre del cliente es obligatorio", "Error");
-    await apiRequest("post", "/clients", { data: clientForm });
+    if (editingClientId) {
+      await apiRequest("put", `/clients/${editingClientId}`, { data: clientForm });
+    } else {
+      await apiRequest("post", "/clients", { data: clientForm });
+    }
     setClientForm({ nombre: "", correo: "", telefono: "" });
+    setEditingClientId(null);
     setShowClientModal(false);
     await reloadBackendData();
-    showNotice("Cliente registrado", "Éxito");
+    showNotice(editingClientId ? "Cliente actualizado" : "Cliente registrado", "Éxito");
+  };
+
+  const handleEditClient = (client) => {
+    setClientForm({ nombre: client.nombre || "", correo: client.correo || "", telefono: client.telefono || "" });
+    setEditingClientId(client.id);
+    setShowClientModal(true);
+  };
+
+  const handleDeleteClient = async (clientId) => {
+    const confirmed = window.confirm("¿Eliminar este cliente?");
+    if (!confirmed) return;
+    await apiRequest("delete", `/clients/${clientId}`);
+    await reloadBackendData();
+    showNotice("Cliente eliminado", "Éxito");
   };
 
   const confirmSaveFavoriteFilter = () => {
@@ -1032,15 +1140,42 @@ function App() {
 
   return (
     <div className={`app-container ${darkMode ? "dark-theme" : ""}`}>
+      <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+        <aside className="sidebar">
+          <div className="sidebar-top">
+            <button className="sidebar-toggle" onClick={() => setSidebarCollapsed((prev) => !prev)}>
+              <SidebarSimple size={20} />
+            </button>
+            {!sidebarCollapsed && <h2>{APP_NAME}</h2>}
+          </div>
+          <nav className="sidebar-nav">
+            <button className={`sidebar-item ${activeSection === "dashboard" ? "active" : ""}`} onClick={() => { setActiveSection("dashboard"); setShowPremiumDashboard(true); }}>
+              <ChartLine size={18} /> {!sidebarCollapsed && "Dashboard"}
+            </button>
+            <button className={`sidebar-item ${activeSection === "principal" ? "active" : ""}`} onClick={() => setActiveSection("principal")}>
+              <Package size={18} /> {!sidebarCollapsed && "Pantalla Principal"}
+            </button>
+            <button className={`sidebar-item ${activeSection === "clientes" ? "active" : ""}`} onClick={() => setActiveSection("clientes")}>
+              <Users size={18} /> {!sidebarCollapsed && "Clientes"}
+            </button>
+            <button className={`sidebar-item ${activeSection === "licencia" ? "active" : ""}`} onClick={() => setActiveSection("licencia")}>
+              <Crown size={18} /> {!sidebarCollapsed && "Licencia y Premium"}
+            </button>
+            <button className={`sidebar-item ${activeSection === "configuracion" ? "active" : ""}`} onClick={() => setActiveSection("configuracion")}>
+              <Gear size={18} /> {!sidebarCollapsed && "Configuración"}
+            </button>
+          </nav>
+        </aside>
+        <div className="app-main">
       <header className="app-header">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
               {companyLogo ? <img src={companyLogo} alt="Logo empresa" className="h-10 w-10 object-contain rounded" /> : null}
-              <h1 className="text-2xl font-bold text-slate-900">{companyName || "Sistema de Quimbar"}</h1>
+              <h1 className="text-2xl font-bold text-slate-900">{companyName || APP_NAME}</h1>
             </div>
             <p className="text-sm text-slate-500">
-              {serverBooting
+              {APP_DESCRIPTION} · {serverBooting
                 ? "Iniciando servidor..."
                 : backendAvailable
                   ? "Conectado al servidor"
@@ -1069,6 +1204,84 @@ function App() {
       </header>
 
       <main className="main-content max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        {licenseAlert && (
+          <div className={`license-alert ${licenseAlert.level}`}>
+            <p>{licenseAlert.text}</p>
+            <button className="btn-primary" onClick={() => window.open(RENEW_PAGE_URL, "_blank", "noopener,noreferrer")}>Renovar licencia</button>
+          </div>
+        )}
+        {activeSection === "dashboard" && isPremiumUnlocked && (
+          <div className="mb-6">
+            {activeTab === "logistica"
+              ? <PremiumDashboardLogistica records={transportistaRecords} />
+              : <PremiumDashboardTransportista records={logisticaRecords} />}
+          </div>
+        )}
+        {activeSection === "clientes" && (
+          <div className="space-y-4 mb-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Clientes</h2>
+              <div className="flex items-center gap-2">
+                <button className={`btn-secondary ${clientViewMode === "lista" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("lista")}><List size={16} />Lista</button>
+                <button className={`btn-secondary ${clientViewMode === "tarjetas" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("tarjetas")}><SquaresFour size={16} />Tarjetas</button>
+              </div>
+            </div>
+            {clientViewMode === "tarjetas" ? (
+              <div className="grid md:grid-cols-2 gap-4">
+                {clients.map((client) => (
+                  <div key={client.id} className="metric-card">
+                    <p className="font-semibold">{client.nombre}</p>
+                    <p className="text-sm text-slate-500">{client.correo || "Sin correo"}</p>
+                    <p className="text-sm text-slate-500">{client.telefono || "Sin teléfono"}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button>
+                      <button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="data-table">
+                  <thead><tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Acciones</th></tr></thead>
+                  <tbody>
+                    {clients.map((client) => (
+                      <tr key={client.id}>
+                        <td>{client.nombre}</td><td>{client.correo || "-"}</td><td>{client.telefono || "-"}</td>
+                        <td className="flex gap-2"><button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button><button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        {activeSection === "licencia" && (
+          <div className="space-y-4 mb-6">
+            <h2 className="text-xl font-bold">Licencia y Premium</h2>
+            <p>Estado premium: <strong>{isPremiumUnlocked ? "Activo" : "Inactivo"}</strong></p>
+            <p>Token actual: <code>{localStorage.getItem(STORAGE_KEYS.premiumToken) || "No registrado"}</code></p>
+            <button className="btn-primary" onClick={() => setShowPremiumModal(true)}>Activar Premium</button>
+          </div>
+        )}
+        {activeSection === "configuracion" && (
+          <div className="space-y-5 mb-6">
+            <AutoSaveConfig onSave={reloadBackendData} />
+            <div className="metric-card">
+              <h3 className="font-semibold mb-2">Información del Sistema</h3>
+              <p className="text-slate-600">{APP_NAME}</p>
+              <p className="text-slate-600">{APP_DESCRIPTION}</p>
+              <p className="text-xs text-slate-500 mt-2">Auto guardado: {autoSave.enabled ? "Activo" : "Inactivo"} · Intervalo: {Math.round(Number(autoSave.interval) / 60000)} min</p>
+            </div>
+            <div className="metric-card">
+              <h3 className="font-semibold mb-2">Persistencia de Datos</h3>
+              <p className="text-slate-700">Tus datos están seguros</p>
+              <p className="text-sm text-slate-500">Todos tus datos se guardan de forma segura. Esto incluye registros, clientes, configuración, filtros, preferencias y datos de licencia.</p>
+            </div>
+          </div>
+        )}
+        {activeSection === "principal" && (
         {/* Pestañas principales */}
         <div className="hidden md:flex border-b border-slate-300 mb-6">
           {TABS.map((tab) => (
@@ -1439,10 +1652,9 @@ function App() {
                               <PencilSimple size={18} />
                             </button>
                             <button
-                              onClick={() => { if (!isPremiumUnlocked) return; setShowDeleteConfirm(record.id); }}
-                              className="p-1 hover:bg-red-50 rounded disabled:opacity-40"
-                              disabled={!isPremiumUnlocked}
-                              title={isPremiumUnlocked ? "Eliminar" : "Premium"}
+                              onClick={() => setShowDeleteConfirm(record.id)}
+                              className="p-1 hover:bg-red-50 rounded"
+                              title="Eliminar"
                             >
                               <Trash size={18} className="text-red-500" />
                             </button>
@@ -1456,7 +1668,10 @@ function App() {
             </div>
           )}
         </div>
+        )}
       </main>
+      </div>
+      </div>
 
       {/* Modal de formulario */}
       {showForm && (
@@ -1543,6 +1758,8 @@ function App() {
                   <button
                     onClick={() => {
                       if (isPremiumUnlocked) {
+                        const confirmed = window.confirm("Estás a punto de desactivar el modo Premium.\nAlgunas funciones avanzadas dejarán de estar disponibles.\n¿Deseas continuar?");
+                        if (!confirmed) return;
                         setIsPremiumUnlocked(false);
                         localStorage.removeItem(STORAGE_KEYS.premiumToken);
                       } else {
@@ -1638,9 +1855,9 @@ function App() {
       {/* Modal de aviso */}
       {showClientModal && (
         <>
-          <div className="dialog-overlay" onClick={() => setShowClientModal(false)} />
+          <div className="dialog-overlay" onClick={() => { setShowClientModal(false); setEditingClientId(null); }} />
           <div className="dialog-content">
-            <h2 className="text-xl font-bold text-slate-900 mb-4">Registrar Cliente</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-4">{editingClientId ? "Editar Cliente" : "Registrar Cliente"}</h2>
             <div className="space-y-3">
               <input className="form-input w-full" placeholder="Nombre" value={clientForm.nombre} onChange={(e) => setClientForm((prev) => ({ ...prev, nombre: e.target.value }))} />
               <input className="form-input w-full" placeholder="Correo" value={clientForm.correo} onChange={(e) => setClientForm((prev) => ({ ...prev, correo: e.target.value }))} />
@@ -1649,7 +1866,26 @@ function App() {
             </div>
             <div className="flex gap-3 mt-4">
               <button className="btn-primary flex-1" onClick={handleCreateClient}>Guardar</button>
-              <button className="btn-secondary" onClick={() => setShowClientModal(false)}>Cancelar</button>
+              <button className="btn-secondary" onClick={() => { setShowClientModal(false); setEditingClientId(null); }}>Cancelar</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de aviso */}
+      {showLicenseOnboarding && (
+        <>
+          <div className="dialog-overlay" />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Primera activación de licencia</h2>
+            <p className="text-sm text-slate-500 mb-4">No tienes una licencia activa. Haz clic aquí para adquirir una.</p>
+            <div className="space-y-3">
+              <input className="form-input w-full" placeholder="Nombre de usuario" value={licenseProfile.username} onChange={(e) => setLicenseProfile((prev) => ({ ...prev, username: e.target.value }))} />
+              <input className="form-input w-full" placeholder="Nombre completo o empresa" value={licenseProfile.businessName} onChange={(e) => setLicenseProfile((prev) => ({ ...prev, businessName: e.target.value }))} />
+              <LicensePurchasePrompt variant="inline" message="No tienes una licencia activa. Haz clic aquí para adquirir una." />
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button className="btn-primary flex-1" onClick={() => setShowLicenseOnboarding(false)} disabled={!licenseProfile.username || !licenseProfile.businessName}>Continuar</button>
             </div>
           </div>
         </>
@@ -1666,6 +1902,7 @@ function App() {
           </div>
         </>
       )}
+      <DeveloperSignature developerName="Gestión Logística y de Transportes" position="bottom-right" />
     </div>
   );
 }
