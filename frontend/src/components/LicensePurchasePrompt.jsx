@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, ShoppingCart, ExternalLink } from '@phosphor-icons/react';
+import { Lock, ShoppingCart, ArrowSquareOut } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -36,7 +36,7 @@ const LicensePurchasePrompt = ({
               >
                 <ShoppingCart size={18} className="mr-2" />
                 Adquirir Licencia
-                <ExternalLink size={16} className="ml-2" />
+                <ArrowSquareOut size={16} className="ml-2" />
               </Button>
             </div>
           </div>
@@ -59,7 +59,7 @@ const LicensePurchasePrompt = ({
         >
           <ShoppingCart size={16} className="mr-1" />
           Comprar
-          <ExternalLink size={14} className="ml-1" />
+          <ArrowSquareOut size={14} className="ml-1" />
         </Button>
       </div>
     );
@@ -87,7 +87,7 @@ const LicensePurchasePrompt = ({
         >
           <ShoppingCart size={18} className="mr-2" />
           Adquirir Licencia Ahora
-          <ExternalLink size={16} className="ml-2" />
+          <ArrowSquareOut size={16} className="ml-2" />
         </Button>
         <p className="text-xs text-slate-500 text-center mt-3">
           Se abrirá en una nueva pestaña
