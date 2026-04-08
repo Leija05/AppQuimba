@@ -887,7 +887,7 @@ async def verify_license():
 
 @api_router.get("/")
 async def root():
-    return {"message": "Sistema de Quimbar API - Logística y Transportista"}
+    return {"message": "Gestión Logística y de Transportes API"}
 
 
 # Include the router in the main app

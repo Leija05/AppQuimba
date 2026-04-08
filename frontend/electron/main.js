@@ -10,7 +10,7 @@ const isDev = !app.isPackaged;
 // --- CONFIGURACIÓN DE LICENCIA ---
 const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
 const ALGORITHM = 'aes-256-cbc';
-const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionCruces');
+const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionLogistica');
 const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
 const RENEW_PAGE_URL = 'https://leija05.github.io/Venta/';
 

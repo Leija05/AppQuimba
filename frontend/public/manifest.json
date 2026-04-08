@@ -1,7 +1,7 @@
 {
-  "short_name": "Quimbar",
-  "name": "Sistema de Quimbar - Primo Ale",
-  "description": "Sistema de gestión de registros de transporte y clientes",
+  "short_name": "Gestión Logística",
+  "name": "Gestión Logística y de Transportes",
+  "description": "Solución profesional para control logístico",
   "icons": [
     {
       "src": "favicon.ico",

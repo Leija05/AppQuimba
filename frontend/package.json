@@ -1,8 +1,8 @@
 {
   "name": "frontend",
   "version": "0.1.0",
-  "description": "Sistema de Quimbar - gestión de registros y reportes",
-  "author": "Gestion de Quimbar",
+  "description": "Gestión Logística y de Transportes - Solución profesional para control logístico",
+  "author": "Gestión Logística y de Transportes",
   "repository": {
     "type": "git",
     "url": "https://example.com/quimbar-main.git"
@@ -82,8 +82,8 @@
   },
   "build": {
     "extends": null,
-    "appId": "com.quimbar.app",
-    "productName": "Gestion de Quimbar",
+    "appId": "com.gestionlogistica.app",
+    "productName": "Gestión Logística y de Transportes",
     "publish": [
       {
         "provider": "generic",
