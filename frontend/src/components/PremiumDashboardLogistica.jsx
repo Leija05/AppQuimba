@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Users, TrendingUp, DollarSign, Package, Award } from '@phosphor-icons/react';
+import { Users, TrendingUp, CurrencyDollar, Package, Award } from '@phosphor-icons/react';
 
 const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
@@ -141,7 +141,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
             <div className="bg-white border border-slate-300 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Facturado</span>
-                <DollarSign size={20} weight="duotone" className="text-green-600" />
+                <CurrencyDollar size={20} weight="duotone" className="text-green-600" />
               </div>
               <p className="text-2xl font-bold text-slate-900">{formatCurrency(selectedClientData.total)}</p>
             </div>

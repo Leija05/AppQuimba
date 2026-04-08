@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Users, TrendingUp, DollarSign, Truck, Award, Package } from '@phosphor-icons/react';
+import { Users, TrendingUp, CurrencyDollar, Truck, Award, Package } from '@phosphor-icons/react';
 
 const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
@@ -164,7 +164,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
             <div className="bg-white border border-slate-300 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Facturado</span>
-                <DollarSign size={20} weight="duotone" className="text-green-600" />
+                <CurrencyDollar size={20} weight="duotone" className="text-green-600" />
               </div>
               <p className="text-xl font-bold text-slate-900">{formatCurrency(selectedClientData.total)}</p>
             </div>
@@ -188,7 +188,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
             <div className="bg-white border border-slate-300 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Saldo a Favor</span>
-                <DollarSign size={20} weight="duotone" className="text-blue-600" />
+                <CurrencyDollar size={20} weight="duotone" className="text-blue-600" />
               </div>
               <p className="text-xl font-bold text-blue-600">{formatCurrency(selectedClientData.totalSaldoFavor)}</p>
             </div>
