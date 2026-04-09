@@ -75,6 +75,13 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
     })).sort((a, b) => b.total - a.total).slice(0, 10);
   }, [clientsData]);
 
+  const handleSelectClient = (payload) => {
+    const candidate = payload?.fullName || payload?.nombre;
+    if (!candidate) return;
+    const foundClient = clientsData.find((client) => client.nombre === candidate || client.nombre.startsWith(candidate));
+    setSelectedClient(foundClient?.nombre || candidate);
+  };
+
   const selectedClientData = useMemo(() => {
     if (!selectedClient) return null;
     return clientsData.find(c => c.nombre === selectedClient);
@@ -135,16 +142,21 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={globalChartData} onClick={(data) => {
-            if (data && data.activePayload) {
-              setSelectedClient(data.activePayload[0].payload.fullName);
-            }
-          }}>
+          <BarChart
+            data={globalChartData}
+            onClick={(data) => handleSelectClient(data?.activePayload?.[0]?.payload)}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
             <XAxis dataKey="nombre" angle={-45} textAnchor="end" height={80} style={{ fontSize: '12px' }} />
             <YAxis tickFormatter={(value) => formatCurrency(value)} style={{ fontSize: '12px' }} />
             <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="total" fill="#002FA7" radius={[4, 4, 0, 0]} cursor="pointer" />
+            <Bar
+              dataKey="total"
+              fill="#002FA7"
+              radius={[4, 4, 0, 0]}
+              cursor="pointer"
+              onClick={(data) => handleSelectClient(data)}
+            />
           </BarChart>
         </ResponsiveContainer>
 
