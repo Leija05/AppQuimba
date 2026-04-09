@@ -470,6 +470,7 @@ function App() {
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [activeDashboardView, setActiveDashboardView] = useState("logistica");
+  const [activationLicense, setActivationLicense] = useState({ token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -539,18 +540,20 @@ function App() {
       const maxAttempts = 8;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
+          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes, licenseDetailsRes] = await Promise.all([
             apiRequest("get", "/logistica/records"),
             apiRequest("get", "/logistica/uploads"),
             apiRequest("get", "/transportista/records"),
             apiRequest("get", "/transportista/uploads"),
-            apiRequest("get", "/clients")
+            apiRequest("get", "/clients"),
+            apiRequest("get", "/license/details")
           ]);
           setLogisticaRecords(logRecordsRes.data || []);
           setLogisticaUploads(logUploadsRes.data || []);
           setTransportistaRecords(transRecordsRes.data || []);
           setTransportistaUploads(transUploadsRes.data || []);
           setClients(clientsRes.data || []);
+          setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
           setBackendAvailable(true);
           setServerBooting(false);
           return;
@@ -609,18 +612,20 @@ function App() {
   }, [filteredRecords, isLogistica, activeLogisticaView]);
 
   const reloadBackendData = async () => {
-    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
+    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes, licenseDetailsRes] = await Promise.all([
       apiRequest("get", "/logistica/records"),
       apiRequest("get", "/logistica/uploads"),
       apiRequest("get", "/transportista/records"),
       apiRequest("get", "/transportista/uploads"),
-      apiRequest("get", "/clients")
+      apiRequest("get", "/clients"),
+      apiRequest("get", "/license/details")
     ]);
     setLogisticaRecords(logRecordsRes.data || []);
     setLogisticaUploads(logUploadsRes.data || []);
     setTransportistaRecords(transRecordsRes.data || []);
     setTransportistaUploads(transUploadsRes.data || []);
     setClients(clientsRes.data || []);
+    setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
   };
 
   const autoSave = useAutoSave(async () => {
@@ -656,6 +661,7 @@ function App() {
   const autoSaveLastSaved = autoSave.lastSave
     ? new Date(autoSave.lastSave).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     : "Sin registro";
+  const activationExpiryDate = activationLicense?.expiry_date ? new Date(activationLicense.expiry_date) : null;
 
   useEffect(() => {
     if (!licenseProfile.username || !licenseProfile.businessName) {
@@ -1257,7 +1263,7 @@ function App() {
                 <div>
                   <h2 className="text-xl font-bold">Licencia y Premium</h2>
                   <p className="text-sm text-slate-500">
-                    Gestiona tu token, consulta vencimiento y controla tu acceso a funciones premium.
+                    Consulta tus tokens activos y la vigencia de cada licencia.
                   </p>
                 </div>
                 <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
@@ -1266,6 +1272,22 @@ function App() {
               </div>
 
               <div className="premium-license-grid">
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Token de activación del programa</p>
+                  <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
+                </div>
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Vencimiento de activación</p>
+                  <p className="premium-license-value">
+                    {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
+                  </p>
+                </div>
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Días restantes de activación</p>
+                  <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
+                    {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
+                  </p>
+                </div>
                 <div className="premium-license-item">
                   <p className="premium-license-label">Token actual</p>
                   <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
@@ -1282,29 +1304,6 @@ function App() {
                     {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
                   </p>
                 </div>
-              </div>
-
-              <div className="premium-license-actions">
-                <button className="btn-primary" onClick={() => setShowPremiumModal(true)}>Activar / Cambiar Token</button>
-                <button
-                  className="btn-secondary"
-                  onClick={async () => {
-                    if (!currentPremiumToken) return showNotice("No hay token para copiar", "Aviso");
-                    try {
-                      await navigator.clipboard.writeText(currentPremiumToken);
-                      showNotice("Token copiado al portapapeles", "Éxito");
-                    } catch {
-                      showNotice("No se pudo copiar el token", "Error");
-                    }
-                  }}
-                >
-                  <Copy size={16} />Copiar token
-                </button>
-                {isPremiumUnlocked && (
-                  <button className="btn-danger" onClick={() => setShowDeactivatePremiumConfirm(true)}>
-                    Desactivar premium
-                  </button>
-                )}
               </div>
             </div>
           </div>
