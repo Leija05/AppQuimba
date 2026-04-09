@@ -7,6 +7,7 @@ const { machineIdSync } = require('node-machine-id');
 
 const isDev = !app.isPackaged;
 const ICON_FILENAME = 'icon.ico';
+const APP_USER_MODEL_ID = 'com.gestionlogistica.app';
 
 // --- CONFIGURACIÓN DE LICENCIA ---
 const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
@@ -17,6 +18,17 @@ const RENEW_PAGE_URL = 'https://leija05.github.io/Venta/';
 
 let backendProcess = null;
 let backendStartupIssue = '';
+
+function resolveAppIconPath() {
+  const candidatePaths = [
+    path.join(__dirname, '../assets', ICON_FILENAME),
+    path.join(process.resourcesPath || '', 'assets', ICON_FILENAME),
+    path.join(process.resourcesPath || '', 'app.asar', 'assets', ICON_FILENAME),
+    path.join(__dirname, '../build', ICON_FILENAME),
+  ];
+
+  return candidatePaths.find((candidatePath) => candidatePath && fs.existsSync(candidatePath)) || null;
+}
 
 function encryptLicensePayload(payload, hwID) {
   const iv = crypto.randomBytes(16);
@@ -101,6 +113,7 @@ function showTokenPrompt(message, hwID, type = 'license') {
       resizable: false,
       modal: true,
       show: true,
+      icon: resolveAppIconPath() || undefined,
       webPreferences: { nodeIntegration: true, contextIsolation: false },
     });
     const html = `
@@ -265,13 +278,7 @@ async function waitForBackendReady() {
 // --- LÓGICA DE VENTANAS ---
 
 function createWindow() {
-  const preferredIconPath = isDev
-    ? path.join(__dirname, '../assets', ICON_FILENAME)
-    : path.join(process.resourcesPath, 'assets', ICON_FILENAME);
-  const fallbackIconPath = path.join(__dirname, '../assets', ICON_FILENAME);
-  const resolvedIconPath = fs.existsSync(preferredIconPath)
-    ? preferredIconPath
-    : (fs.existsSync(fallbackIconPath) ? fallbackIconPath : null);
+  const resolvedIconPath = resolveAppIconPath();
 
   const windowConfig = {
     width: 1440,
@@ -308,6 +315,9 @@ function createWindow() {
 // --- PUNTO DE ENTRADA PRINCIPAL ---
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+  }
   Menu.setApplicationMenu(null);
 
   // 1. OBTENER LA IDENTIDAD DE LA PC
