@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Users, TrendUp , CurrencyDollar, Truck, Medal, Package } from '@phosphor-icons/react';
+import { Users, TrendUp, CurrencyDollar, Truck, Medal, Package } from '@phosphor-icons/react';
 
 const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
@@ -128,10 +128,10 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-slate-300 rounded-sm p-6">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
         <div className="flex items-center gap-3 mb-6">
           <Users size={28} weight="duotone" className="text-[#002FA7]" />
-          <h2 className="text-2xl font-bold text-slate-900">Clientes Registrados - Transportista</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Clientes Registrados - Transportista</h2>
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
@@ -161,7 +161,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Facturado</span>
                 <CurrencyDollar size={20} weight="duotone" className="text-green-600" />
@@ -169,15 +169,15 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               <p className="text-xl font-bold text-slate-900">{formatCurrency(selectedClientData.total)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Pendiente</span>
-                <TrendUp  size={20} weight="duotone" className="text-red-600" />
+                <TrendUp size={20} weight="duotone" className="text-red-600" />
               </div>
               <p className="text-xl font-bold text-red-600">{formatCurrency(selectedClientData.totalPendiente)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Pagado</span>
                 <Medal size={20} weight="duotone" className="text-green-600" />
@@ -185,7 +185,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               <p className="text-xl font-bold text-green-600">{formatCurrency(selectedClientData.totalPagado)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Saldo a Favor</span>
                 <CurrencyDollar size={20} weight="duotone" className="text-blue-600" />
@@ -193,16 +193,16 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               <p className="text-xl font-bold text-blue-600">{formatCurrency(selectedClientData.totalSaldoFavor)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Mayor Venta</span>
-                <Award size={20} weight="duotone" className="text-amber-600" />
+                <Medal size={20} weight="duotone" className="text-amber-600" />
               </div>
               <p className="text-xl font-bold text-amber-600">{formatCurrency(mayorVenta)}</p>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-300 rounded-sm p-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Flujo Mensual</h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={selectedClientData.registrosPorMes}>
@@ -218,7 +218,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white border border-slate-300 rounded-sm p-6">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Top Servicios</h3>
               <div className="space-y-2">
                 {topServicios.map((servicio, index) => (
@@ -233,7 +233,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-6">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Top Transportistas</h3>
               <div className="space-y-2">
                 {topTransportistas.map((transportista, index) => (

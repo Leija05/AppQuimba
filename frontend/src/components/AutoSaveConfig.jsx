@@ -56,19 +56,19 @@ const AutoSaveConfig = ({ onSave }) => {
   };
 
   return (
-    <div className="space-y-4 p-4 border border-slate-300 rounded-sm bg-white">
+    <div className="space-y-4 p-4 border border-slate-300 dark:border-slate-700 rounded-sm bg-white dark:bg-slate-900">
       <div className="flex items-center gap-3">
         <FloppyDisk size={24} weight="duotone" className="text-[#002FA7]" />
-        <h3 className="text-lg font-semibold text-slate-900">Auto Guardado</h3>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Auto Guardado</h3>
       </div>
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label htmlFor="autosave-enabled" className="text-sm font-medium text-slate-700">
+            <Label htmlFor="autosave-enabled" className="text-sm font-medium text-slate-700 dark:text-slate-200">
               Activar Auto Guardado
             </Label>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Guarda automáticamente todos los cambios
             </p>
           </div>
@@ -82,7 +82,7 @@ const AutoSaveConfig = ({ onSave }) => {
         {enabled && (
           <>
             <div className="space-y-2">
-              <Label htmlFor="autosave-interval" className="text-sm font-medium text-slate-700">
+              <Label htmlFor="autosave-interval" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Frecuencia de guardado
               </Label>
               <Select value={interval} onValueChange={setAutoSaveInterval}>
@@ -99,7 +99,7 @@ const AutoSaveConfig = ({ onSave }) => {
               </Select>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-slate-500 p-2 bg-slate-50 rounded-sm">
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300 p-2 bg-slate-50 dark:bg-slate-800 rounded-sm">
               <Clock size={16} />
               <span>Último guardado: {formatLastSave()}</span>
             </div>

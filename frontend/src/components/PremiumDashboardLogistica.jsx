@@ -3,7 +3,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Users, TrendUp , CurrencyDollar, Package, Medal } from '@phosphor-icons/react';
+import { Users, TrendUp, CurrencyDollar, Package, Medal } from '@phosphor-icons/react';
 
 const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
@@ -105,10 +105,10 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-slate-300 rounded-sm p-6">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
         <div className="flex items-center gap-3 mb-6">
           <Users size={28} weight="duotone" className="text-[#002FA7]" />
-          <h2 className="text-2xl font-bold text-slate-900">Clientes Registrados</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Clientes Registrados</h2>
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
@@ -138,7 +138,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Facturado</span>
                 <CurrencyDollar size={20} weight="duotone" className="text-green-600" />
@@ -146,15 +146,15 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
               <p className="text-2xl font-bold text-slate-900">{formatCurrency(selectedClientData.total)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Pendiente</span>
-                <TrendUp  size={20} weight="duotone" className="text-red-600" />
+                <TrendUp size={20} weight="duotone" className="text-red-600" />
               </div>
               <p className="text-2xl font-bold text-red-600">{formatCurrency(selectedClientData.totalPendiente)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total Pagado</span>
                 <Medal size={20} weight="duotone" className="text-green-600" />
@@ -162,7 +162,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
               <p className="text-2xl font-bold text-green-600">{formatCurrency(selectedClientData.totalPagado)}</p>
             </div>
 
-            <div className="bg-white border border-slate-300 rounded-sm p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-slate-500 uppercase">Registros</span>
                 <Package size={20} weight="duotone" className="text-[#002FA7]" />
@@ -171,7 +171,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
             </div>
           </div>
 
-          <div className="bg-white border border-slate-300 rounded-sm p-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Flujo Mensual de Dinero</h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={selectedClientData.registrosPorMes}>
@@ -186,7 +186,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-white border border-slate-300 rounded-sm p-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Top Servicios</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ResponsiveContainer width="100%" height={250}>

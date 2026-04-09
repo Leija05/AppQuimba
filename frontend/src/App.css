@@ -244,7 +244,7 @@
     background: rgba(0, 0, 0, 0.5);
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: 9000 !important;
 }
 
 .dialog-content {
@@ -256,11 +256,83 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 51;
+    z-index: 9001 !important;
     max-width: 500px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
+}
+
+/* Dark mode coherence */
+.app-container.dark-theme {
+    background: #020617;
+    color: #e2e8f0;
+}
+
+.dark-theme .app-header,
+.dark-theme .metric-card,
+.dark-theme .table-container,
+.dark-theme .dialog-content,
+.dark-theme .notice-content {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+.dark-theme .form-input {
+    background: #0b1220;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+.dark-theme .form-input::placeholder {
+    color: #94a3b8;
+}
+
+.dark-theme .btn-secondary {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
+.dark-theme .btn-danger {
+    background: rgba(220, 38, 38, 0.2);
+    border-color: rgba(248, 113, 113, 0.5);
+    color: #fecaca;
+}
+
+.dark-theme .data-table th {
+    background: #111827;
+    border-bottom-color: #334155;
+    color: #cbd5e1;
+}
+
+.dark-theme .data-table td {
+    border-bottom-color: #1f2937;
+}
+
+.dark-theme .data-table tr:hover,
+.dark-theme .data-table tr:nth-child(even) {
+    background: rgba(30, 41, 59, 0.45);
+}
+
+.dark-theme .search-input-wrapper,
+.dark-theme .filter-chip-group {
+    background: #0b1220;
+    border-color: #334155;
+}
+
+.dark-theme .search-input {
+    color: #e2e8f0;
+}
+
+.dark-theme .filter-chip {
+    color: #cbd5e1;
+}
+
+.dark-theme .filter-chip.active {
+    background: #002FA7;
+    color: #fff;
 }
 /* 1. Asegura que el fondo del aviso sea el más alto de todos */
 .notice-overlay {
@@ -268,7 +340,7 @@
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
     backdrop-blur: sm;
-    z-index: 200; /* Mayor a 150 del modal de exportación */
+    z-index: 9000 !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -277,15 +349,13 @@
 /* 2. El contenido del aviso */
 .notice-content {
     background: white;
-    z-index: 201; 
+    z-index: 9001 !important; 
     /* Tus otros estilos de radio, padding, etc. */
 }
 
 /* 3. Si usas una clase general para diálogos (como SweetAlert o la tuya propia) */
 .dialog-content {
-    /* Cámbialo de 51 a 200 si quieres que TODOS los diálogos 
-       de aviso floten sobre cualquier otra cosa */
-    z-index: 200;
+    z-index: 9001 !important;
 }
 
 /* Loading spinner */
