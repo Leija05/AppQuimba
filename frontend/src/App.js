@@ -1280,7 +1280,7 @@ function App() {
 
         {/* Modal de exportación */}
         {exportSettings.showModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9000] flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-700">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-[#002FA7]">
