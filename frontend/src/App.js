@@ -52,7 +52,8 @@ const STORAGE_KEYS = {
   logo: "gestion-logistica-company-logo",
   companyName: "gestion-logistica-company-name",
   sidebarCollapsed: "gestion-logistica-sidebar-collapsed",
-  firstLicenseSetup: "gestion-logistica-license-profile"
+  firstLicenseSetup: "gestion-logistica-license-profile",
+  backupFolder: "gestion-logistica-backup-folder"
 };
 
 const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET;
@@ -471,6 +472,10 @@ function App() {
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [activeDashboardView, setActiveDashboardView] = useState("logistica");
   const [activationLicense, setActivationLicense] = useState({ token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+  const [backupFolderPath, setBackupFolderPath] = useState(() => localStorage.getItem(STORAGE_KEYS.backupFolder) || "");
+  const [backupActivity, setBackupActivity] = useState({ at: "", path: "" });
+  const [lastRealtimeUpdate, setLastRealtimeUpdate] = useState("");
+  const [emptyDataWarned, setEmptyDataWarned] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -554,6 +559,7 @@ function App() {
           setTransportistaUploads(transUploadsRes.data || []);
           setClients(clientsRes.data || []);
           setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+          setLastRealtimeUpdate(new Date().toISOString());
           setBackendAvailable(true);
           setServerBooting(false);
           return;
@@ -626,6 +632,54 @@ function App() {
     setTransportistaUploads(transUploadsRes.data || []);
     setClients(clientsRes.data || []);
     setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+    setLastRealtimeUpdate(new Date().toISOString());
+  };
+
+  const handleSelectBackupFolder = async () => {
+    if (!window?.desktopAPI?.selectBackupFolder) {
+      return showNotice("Esta función está disponible en la app de escritorio.", "Aviso");
+    }
+    const result = await window.desktopAPI.selectBackupFolder();
+    if (result?.canceled) return;
+    if (result?.folderPath) {
+      setBackupFolderPath(result.folderPath);
+      localStorage.setItem(STORAGE_KEYS.backupFolder, result.folderPath);
+      showNotice(`Carpeta de respaldo seleccionada:\n${result.folderPath}`, "Respaldo");
+    }
+  };
+
+  const handleSaveBackupNow = async () => {
+    if (!backupFolderPath) return showNotice("Selecciona primero una carpeta de respaldo.", "Aviso");
+    if (!window?.desktopAPI?.saveBackupJson) {
+      return showNotice("Guardado en carpeta disponible solo en escritorio.", "Aviso");
+    }
+    try {
+      const exported = await apiRequest("get", "/backup/export");
+      const saveResult = await window.desktopAPI.saveBackupJson({ folderPath: backupFolderPath, data: exported.data });
+      if (!saveResult?.ok) throw new Error(saveResult?.error || "No se pudo guardar");
+      const at = new Date().toISOString();
+      setBackupActivity({ at, path: saveResult.filePath });
+      showNotice(`Respaldo guardado correctamente.\nRuta: ${saveResult.filePath}`, "Respaldo");
+    } catch (error) {
+      showNotice(`Error al guardar respaldo: ${error?.message || "desconocido"}`, "Error");
+    }
+  };
+
+  const handleLoadBackupFromFolder = async () => {
+    if (!backupFolderPath) return showNotice("Selecciona primero una carpeta de respaldo.", "Aviso");
+    if (!window?.desktopAPI?.loadBackupJson) {
+      return showNotice("Carga desde carpeta disponible solo en escritorio.", "Aviso");
+    }
+    try {
+      const loaded = await window.desktopAPI.loadBackupJson({ folderPath: backupFolderPath });
+      if (!loaded?.ok) throw new Error(loaded?.error || "No se encontró respaldo");
+      await apiRequest("post", "/backup/import", { data: loaded.data });
+      await reloadBackendData();
+      setBackupActivity({ at: new Date().toISOString(), path: loaded.filePath });
+      showNotice(`Respaldo cargado correctamente.\nOrigen: ${loaded.filePath}`, "Respaldo restaurado");
+    } catch (error) {
+      showNotice(`Error al cargar respaldo: ${error?.message || "desconocido"}`, "Error");
+    }
   };
 
   const autoSave = useAutoSave(async () => {
@@ -643,6 +697,21 @@ function App() {
     window.addEventListener("beforeunload", saveOnClose);
     return () => window.removeEventListener("beforeunload", saveOnClose);
   }, [backendAvailable]);
+
+  useEffect(() => {
+    if (!backendAvailable) return;
+    const realtimeInterval = window.setInterval(() => {
+      reloadBackendData().catch(() => {});
+    }, 20000);
+    return () => window.clearInterval(realtimeInterval);
+  }, [backendAvailable]);
+
+  useEffect(() => {
+    const noData = logisticaRecords.length === 0 && transportistaRecords.length === 0 && clients.length === 0;
+    if (!noData || emptyDataWarned) return;
+    setEmptyDataWarned(true);
+    showNotice("Se detectaron campos/datos vacíos. Puedes seleccionar una carpeta y cargar un respaldo.", "Datos vacíos");
+  }, [logisticaRecords.length, transportistaRecords.length, clients.length, emptyDataWarned]);
 
   const parseTokenExpiry = (token) => {
     const parts = (token || "").split(".");
@@ -662,6 +731,12 @@ function App() {
     ? new Date(autoSave.lastSave).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
     : "Sin registro";
   const activationExpiryDate = activationLicense?.expiry_date ? new Date(activationLicense.expiry_date) : null;
+  const lastRealtimeUpdateLabel = lastRealtimeUpdate
+    ? new Date(lastRealtimeUpdate).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "Sin sincronización";
+  const lastBackupLabel = backupActivity.at
+    ? new Date(backupActivity.at).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "Sin respaldo reciente";
 
   useEffect(() => {
     if (!licenseProfile.username || !licenseProfile.businessName) {
@@ -1342,6 +1417,31 @@ function App() {
                 <li>Preferencias (tema, filtros, licencia) se conservan en este dispositivo.</li>
                 <li>El auto guardado reduce el riesgo de pérdida de cambios.</li>
               </ul>
+            </div>
+            <div className="metric-card config-card">
+              <h3 className="font-semibold mb-2">Respaldo y actualización en tiempo real</h3>
+              <div className="config-kpi-grid">
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Última sincronización</span>
+                  <span className="config-kpi-value">{lastRealtimeUpdateLabel}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Último respaldo</span>
+                  <span className="config-kpi-value">{lastBackupLabel}</span>
+                </div>
+                <div className="config-kpi config-kpi-path">
+                  <span className="config-kpi-label">Carpeta de respaldo</span>
+                  <span className="config-kpi-value">{backupFolderPath || "No seleccionada"}</span>
+                </div>
+              </div>
+              <div className="premium-bulk mt-3">
+                <button className="btn-secondary" onClick={handleSelectBackupFolder}>Seleccionar carpeta</button>
+                <button className="btn-primary" onClick={handleSaveBackupNow}>Guardar respaldo ahora</button>
+                <button className="btn-secondary" onClick={handleLoadBackupFromFolder}>Cargar respaldo</button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Cuando se guarda un respaldo, la app muestra un aviso con la ruta exacta del archivo.
+              </p>
             </div>
           </div>
         )}

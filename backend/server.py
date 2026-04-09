@@ -1000,6 +1000,40 @@ async def notify_license_expiration(payload: LicenseNotificationPayload):
         raise HTTPException(status_code=500, detail="No se pudo enviar notificación de licencia")
 
 
+@api_router.get("/backup/export")
+async def export_backup():
+    async with _records_lock:
+        logistica_records = await load_json(LOGISTICA_RECORDS_FILE)
+        transportista_records = await load_json(TRANSPORTISTA_RECORDS_FILE)
+        logistica_uploads = await load_json(LOGISTICA_UPLOADS_FILE)
+        transportista_uploads = await load_json(TRANSPORTISTA_UPLOADS_FILE)
+        clients = await load_json(CLIENTS_FILE)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "logistica_records": logistica_records,
+        "transportista_records": transportista_records,
+        "logistica_uploads": logistica_uploads,
+        "transportista_uploads": transportista_uploads,
+        "clients": clients,
+    }
+
+
+@api_router.post("/backup/import")
+async def import_backup(payload: dict):
+    def _as_list(value):
+        return value if isinstance(value, list) else []
+
+    async with _records_lock:
+        await save_json(LOGISTICA_RECORDS_FILE, _as_list(payload.get("logistica_records")))
+        await save_json(TRANSPORTISTA_RECORDS_FILE, _as_list(payload.get("transportista_records")))
+        await save_json(LOGISTICA_UPLOADS_FILE, _as_list(payload.get("logistica_uploads")))
+        await save_json(TRANSPORTISTA_UPLOADS_FILE, _as_list(payload.get("transportista_uploads")))
+        await save_json(CLIENTS_FILE, _as_list(payload.get("clients")))
+
+    return {"message": "Respaldo restaurado"}
+
+
 # ============== Legacy/Common Routes ==============
 
 @api_router.get("/")

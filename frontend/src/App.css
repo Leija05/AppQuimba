@@ -767,6 +767,16 @@
     gap: 0.6rem;
 }
 
+.config-kpi-path {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+}
+
+.config-kpi-path .config-kpi-value {
+    text-align: right;
+    word-break: break-all;
+}
+
 .config-kpi-label {
     font-size: 0.78rem;
     color: #64748b;

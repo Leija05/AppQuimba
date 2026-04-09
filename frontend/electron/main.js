@@ -289,6 +289,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
     },
   };
 
@@ -367,6 +368,56 @@ app.whenReady().then(async () => {
       detail: `La app se abrirá pero sin datos.${extra}`,
       buttons: ['Aceptar'],
     });
+  }
+});
+
+ipcMain.handle('backup:select-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Selecciona carpeta para respaldos',
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  return { canceled: false, folderPath: result.filePaths[0] };
+});
+
+ipcMain.handle('backup:save-json', async (_, payload = {}) => {
+  const folderPath = payload.folderPath || '';
+  const data = payload.data || {};
+  if (!folderPath) return { ok: false, error: 'Carpeta inválida' };
+
+  try {
+    if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `respaldo_quimbar_${timestamp}.json`;
+    const filePath = path.join(folderPath, filename);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true, filePath };
+  } catch (error) {
+    return { ok: false, error: error?.message || 'No se pudo guardar el archivo' };
+  }
+});
+
+ipcMain.handle('backup:load-json', async (_, payload = {}) => {
+  const folderPath = payload.folderPath || '';
+  if (!folderPath) return { ok: false, error: 'Carpeta inválida' };
+  try {
+    const files = fs
+      .readdirSync(folderPath)
+      .filter((name) => name.toLowerCase().endsWith('.json'))
+      .map((name) => {
+        const filePath = path.join(folderPath, name);
+        const stats = fs.statSync(filePath);
+        return { name, filePath, mtimeMs: stats.mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    if (!files.length) return { ok: false, error: 'No hay respaldos JSON en la carpeta seleccionada' };
+    const latest = files[0];
+    const raw = fs.readFileSync(latest.filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return { ok: true, filePath: latest.filePath, data: parsed };
+  } catch (error) {
+    return { ok: false, error: error?.message || 'No se pudo cargar el respaldo' };
   }
 });
 
