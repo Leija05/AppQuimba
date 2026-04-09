@@ -7,9 +7,10 @@ const { machineIdSync } = require('node-machine-id');
 
 const isDev = !app.isPackaged;
 const ICON_FILENAME = 'icon.ico';
+const APP_USER_MODEL_ID = 'com.gestionlogistica.app';
 
 // --- CONFIGURACIÓN DE LICENCIA ---
-const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET;
+const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
 const ALGORITHM = 'aes-256-cbc';
 const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionLogistica');
 const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
@@ -17,6 +18,17 @@ const RENEW_PAGE_URL = 'https://leija05.github.io/Venta/';
 
 let backendProcess = null;
 let backendStartupIssue = '';
+
+function resolveAppIconPath() {
+  const candidatePaths = [
+    path.join(__dirname, '../assets', ICON_FILENAME),
+    path.join(process.resourcesPath || '', 'assets', ICON_FILENAME),
+    path.join(process.resourcesPath || '', 'app.asar', 'assets', ICON_FILENAME),
+    path.join(__dirname, '../build', ICON_FILENAME),
+  ];
+
+  return candidatePaths.find((candidatePath) => candidatePath && fs.existsSync(candidatePath)) || null;
+}
 
 function encryptLicensePayload(payload, hwID) {
   const iv = crypto.randomBytes(16);
@@ -101,6 +113,7 @@ function showTokenPrompt(message, hwID, type = 'license') {
       resizable: false,
       modal: true,
       show: true,
+      icon: resolveAppIconPath() || undefined,
       webPreferences: { nodeIntegration: true, contextIsolation: false },
     });
     const html = `
@@ -265,22 +278,25 @@ async function waitForBackendReady() {
 // --- LÓGICA DE VENTANAS ---
 
 function createWindow() {
-  const resolvedIconPath = isDev
-    ? path.join(__dirname, '../assets', ICON_FILENAME)
-    : path.join(process.resourcesPath, 'assets', ICON_FILENAME);
+  const resolvedIconPath = resolveAppIconPath();
 
-  const mainWindow = new BrowserWindow({
+  const windowConfig = {
     width: 1440,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
-    icon: resolvedIconPath,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
+  };
+
+  if (resolvedIconPath) {
+    windowConfig.icon = resolvedIconPath;
+  }
+
+  const mainWindow = new BrowserWindow(windowConfig);
 
   mainWindow.removeMenu();
 
@@ -299,6 +315,9 @@ function createWindow() {
 // --- PUNTO DE ENTRADA PRINCIPAL ---
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(APP_USER_MODEL_ID);
+  }
   Menu.setApplicationMenu(null);
 
   // 1. OBTENER LA IDENTIDAD DE LA PC

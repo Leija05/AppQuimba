@@ -450,6 +450,19 @@
     box-shadow: 0 4px 10px rgba(0, 47, 167, 0.22);
 }
 
+.dashboard-top-list-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.dashboard-top-list-name {
+    color: #334155;
+}
+
+.dashboard-top-list-value {
+    color: #0f172a;
+}
+
 .upload-history {
     border: 1px solid #CBD5E1;
     background: #fff;
@@ -558,6 +571,20 @@
     background: #1E293B;
     border-color: #334155;
     color: #E2E8F0;
+}
+
+.app-container.dark-theme .dashboard-top-list-item {
+    background: #111827;
+    border-color: #334155;
+}
+
+.app-container.dark-theme .dashboard-top-list-name,
+.app-container.dark-theme .dashboard-top-list-value {
+    color: #E2E8F0;
+}
+
+.app-container.dark-theme .recharts-pie-label-text {
+    fill: #E2E8F0 !important;
 }
 
 .premium-grid {

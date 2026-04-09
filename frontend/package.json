@@ -115,10 +115,15 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": true
     },
     "nsis": {
-      "packElevateHelper": false
+      "packElevateHelper": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": "always",
+      "shortcutName": "Gestión Logística y de Transportes"
     },
     "mac": {
       "target": "dmg"

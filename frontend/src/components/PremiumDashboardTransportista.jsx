@@ -234,12 +234,12 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               <h3 className="text-lg font-bold text-slate-900 mb-4">Top Servicios</h3>
               <div className="space-y-2">
                 {topServicios.map((servicio, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-sm">
+                  <div key={index} className="dashboard-top-list-item flex items-center justify-between p-3 rounded-sm">
                     <div className="flex items-center gap-3">
                       <div className="w-4 h-4 rounded" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="text-sm font-medium text-slate-700">{servicio.nombre}</span>
+                      <span className="dashboard-top-list-name text-sm font-medium">{servicio.nombre}</span>
                     </div>
-                    <span className="text-sm font-bold text-slate-900">{formatCurrency(servicio.valor)}</span>
+                    <span className="dashboard-top-list-value text-sm font-bold">{formatCurrency(servicio.valor)}</span>
                   </div>
                 ))}
               </div>
@@ -249,12 +249,12 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
               <h3 className="text-lg font-bold text-slate-900 mb-4">Top Transportistas</h3>
               <div className="space-y-2">
                 {topTransportistas.map((transportista, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-sm">
+                  <div key={index} className="dashboard-top-list-item flex items-center justify-between p-3 rounded-sm">
                     <div className="flex items-center gap-3">
                       <Truck size={16} weight="duotone" className="text-[#002FA7]" />
-                      <span className="text-sm font-medium text-slate-700">{transportista.nombre}</span>
+                      <span className="dashboard-top-list-name text-sm font-medium">{transportista.nombre}</span>
                     </div>
-                    <span className="text-sm font-bold text-slate-900">{formatCurrency(transportista.valor)}</span>
+                    <span className="dashboard-top-list-value text-sm font-bold">{formatCurrency(transportista.valor)}</span>
                   </div>
                 ))}
               </div>
