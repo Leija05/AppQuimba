@@ -464,6 +464,7 @@ function App() {
   const [licenseAlert, setLicenseAlert] = useState(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [activeDashboardView, setActiveDashboardView] = useState("logistica");
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -480,9 +481,9 @@ function App() {
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
   const isLogistica = activeTab === "logistica";
-  const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
-  const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
-  const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
+  const activeApiBasePath = isLogistica ? "/logistica" : "/transportista";
+  const currentRecords = isLogistica ? logisticaRecords : transportistaRecords;
+  const currentUploads = isLogistica ? logisticaUploads : transportistaUploads;
   const currentColumns = isLogistica
     ? (activeLogisticaView === "cliente"
       ? LOGISTICA_CLIENTE_COLUMNS
@@ -519,6 +520,12 @@ function App() {
     });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    if (activeSection === "dashboard") {
+      setActiveDashboardView(activeTab);
+    }
+  }, [activeSection, activeTab]);
 
   useEffect(() => {
     const loadFromBackend = async () => {
@@ -731,7 +738,7 @@ function App() {
         headers: { "Content-Type": "multipart/form-data" }
       });
       await reloadBackendData();
-      showNotice(`${response.data?.records_imported || 0} registros importados en ${basePath === "/transportista" ? "Logística" : "Transporte"}`, "Éxito");
+      showNotice(`${response.data?.records_imported || 0} registros importados en ${basePath === "/logistica" ? "Logística" : "Transporte"}`, "Éxito");
     } catch {
       showNotice("Error al procesar el Excel", "Error");
     } finally {
@@ -1163,7 +1170,24 @@ function App() {
         )}
         {activeSection === "dashboard" && isPremiumUnlocked && (
           <div className="mb-6">
-            {activeTab === "logistica"
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <button
+                type="button"
+                className={`btn-secondary ${activeDashboardView === "logistica" ? "ring-2 ring-blue-700" : ""}`}
+                onClick={() => setActiveDashboardView("logistica")}
+              >
+                Dashboard Clientes
+              </button>
+              <button
+                type="button"
+                className={`btn-secondary ${activeDashboardView === "transportista" ? "ring-2 ring-blue-700" : ""}`}
+                onClick={() => setActiveDashboardView("transportista")}
+              >
+                Dashboard Transportistas
+              </button>
+            </div>
+
+            {activeDashboardView === "logistica"
               ? <PremiumDashboardLogistica records={logisticaRecords} />
               : <PremiumDashboardTransportista records={transportistaRecords} />}
           </div>
@@ -1628,12 +1652,12 @@ function App() {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Subir archivos</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="btn-primary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
                     {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
                     Subir Logística
                   </label>
                   <label className="btn-secondary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
                     <UploadSimple size={20} />
                     Subir Transportes
                   </label>

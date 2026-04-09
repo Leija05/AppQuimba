@@ -1,19 +1,46 @@
 import React, { useState, useMemo } from 'react';
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Users, TrendUp, CurrencyDollar, Truck, Medal, Package } from '@phosphor-icons/react';
+import { Users, TrendUp, CurrencyDollar, Truck, Medal } from '@phosphor-icons/react';
 
 const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
 const PremiumDashboardTransportista = ({ records = [] }) => {
   const [selectedClient, setSelectedClient] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('Todos');
+  const [periodoMeses, setPeriodoMeses] = useState('12');
+
+  const getGroupId = (record) => {
+    return (
+      record.id_unico ||
+      record.shipment ||
+      record.carta_porte ||
+      record.transporte ||
+      record.id ||
+      'sin-id'
+    );
+  };
+
+  const filteredRecords = useMemo(() => {
+    const now = new Date();
+    return records.filter((record) => {
+      const statusOk = statusFilter === 'Todos' || record.status === statusFilter;
+      if (periodoMeses === 'todos') return statusOk;
+      const months = parseInt(periodoMeses, 10);
+      if (Number.isNaN(months)) return statusOk;
+      const fecha = new Date(record.fecha || Date.now());
+      const lowerBound = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+      return statusOk && fecha >= lowerBound;
+    });
+  }, [records, statusFilter, periodoMeses]);
 
   const clientsData = useMemo(() => {
     const clientMap = new Map();
 
-    records.forEach(record => {
+    filteredRecords.forEach(record => {
       const cliente = record.cliente || 'Sin Cliente';
       if (!clientMap.has(cliente)) {
         clientMap.set(cliente, {
@@ -24,7 +51,8 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
           totalSaldoFavor: 0,
           registrosPorMes: {},
           servicios: {},
-          transportistas: {}
+          transportistas: {},
+          groups: {}
         });
       }
 
@@ -58,6 +86,36 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
 
       const transportista = record.transporte || 'Sin Transportista';
       data.transportistas[transportista] = (data.transportistas[transportista] || 0) + total;
+
+      const groupId = String(getGroupId(record)).trim();
+      if (!data.groups[groupId]) {
+        data.groups[groupId] = {
+          id: groupId,
+          total: 0,
+          pendiente: 0,
+          pagado: 0,
+          saldo: 0,
+          transportista,
+          servicio: record.servicio || 'Sin Servicio',
+          items: []
+        };
+      }
+
+      data.groups[groupId].total += total;
+      data.groups[groupId].saldo += saldoFavor;
+      if (record.status === 'Pendiente') data.groups[groupId].pendiente += total;
+      if (record.status === 'Pagado') data.groups[groupId].pagado += total;
+      data.groups[groupId].items.push({
+        id: record.id,
+        fecha: record.fecha || '-',
+        transporte: transportista,
+        servicio: record.servicio || 'Sin Servicio',
+        status: record.status || '-',
+        costo_t: parseFloat(record.costo_t || 0),
+        costo_l: parseFloat(record.costo_l || 0),
+        total,
+        saldo_a_favor: saldoFavor
+      });
     });
 
     return Array.from(clientMap.values()).map(client => ({
@@ -65,7 +123,7 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
       total: client.totalPendiente + client.totalPagado,
       registrosPorMes: Object.values(client.registrosPorMes).sort((a, b) => a.mes.localeCompare(b.mes))
     }));
-  }, [records]);
+  }, [filteredRecords]);
 
   const globalChartData = useMemo(() => {
     return clientsData.map(client => ({
@@ -86,6 +144,21 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
     if (!selectedClient) return null;
     return clientsData.find(c => c.nombre === selectedClient);
   }, [selectedClient, clientsData]);
+
+  const groupedByUniqueId = useMemo(() => {
+    if (!selectedClientData) return [];
+    return Object.values(selectedClientData.groups)
+      .map((group) => ({
+        ...group,
+        diferencia: group.pagado - group.pendiente
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [selectedClientData]);
+
+  const selectedGroup = useMemo(() => {
+    if (!selectedGroupId) return groupedByUniqueId[0] || null;
+    return groupedByUniqueId.find((group) => group.id === selectedGroupId) || groupedByUniqueId[0] || null;
+  }, [groupedByUniqueId, selectedGroupId]);
 
   const topServicios = useMemo(() => {
     if (!selectedClientData) return [];
@@ -108,6 +181,10 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
     const valores = Object.values(selectedClientData.servicios);
     return valores.length > 0 ? Math.max(...valores) : 0;
   }, [selectedClientData]);
+
+  React.useEffect(() => {
+    setSelectedGroupId(null);
+  }, [selectedClient]);
 
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', {
@@ -139,6 +216,37 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
         <div className="flex items-center gap-3 mb-6">
           <Users size={28} weight="duotone" className="text-[#002FA7]" />
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Clientes Registrados - Transportista</h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <label className="text-sm text-slate-600">
+            Status:&nbsp;
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="form-input"
+            >
+              <option value="Todos">Todos</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Pagado">Pagado</option>
+            </select>
+          </label>
+          <label className="text-sm text-slate-600">
+            Periodo:&nbsp;
+            <select
+              value={periodoMeses}
+              onChange={(e) => setPeriodoMeses(e.target.value)}
+              className="form-input"
+            >
+              <option value="3">Últimos 3 meses</option>
+              <option value="6">Últimos 6 meses</option>
+              <option value="12">Últimos 12 meses</option>
+              <option value="todos">Todo el historial</option>
+            </select>
+          </label>
+          <p className="text-xs text-slate-500">
+            Premium: filtra por estado y horizonte de tiempo para detectar diferencias por transportista.
+          </p>
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
@@ -257,6 +365,87 @@ const PremiumDashboardTransportista = ({ records = [] }) => {
                     <span className="dashboard-top-list-value text-sm font-bold">{formatCurrency(transportista.valor)}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-sm p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Agrupación por ID único</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Se agrupa por: <strong>id_unico</strong>, <strong>shipment</strong>, <strong>carta_porte</strong>, y si no existe, por <strong>transportista/id</strong>.
+            </p>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="space-y-2 lg:col-span-1 max-h-[360px] overflow-auto pr-1">
+                {groupedByUniqueId.map((group) => (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setSelectedGroupId(group.id)}
+                    className={`w-full text-left border rounded-sm p-3 ${selectedGroup?.id === group.id ? "border-blue-700 bg-blue-50" : "border-slate-300 bg-white"}`}
+                  >
+                    <p className="text-xs uppercase text-slate-500">ID único</p>
+                    <p className="font-semibold text-slate-900 truncate">{group.id}</p>
+                    <p className="text-sm text-slate-600 mt-1">{group.items.length} registros</p>
+                    <p className="text-sm font-bold text-slate-900">{formatCurrency(group.total)}</p>
+                  </button>
+                ))}
+              </div>
+
+              <div className="lg:col-span-2 border border-slate-300 rounded-sm p-4">
+                {selectedGroup ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase">Total</p>
+                        <p className="font-bold text-slate-900">{formatCurrency(selectedGroup.total)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase">Pendiente</p>
+                        <p className="font-bold text-red-600">{formatCurrency(selectedGroup.pendiente)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase">Pagado</p>
+                        <p className="font-bold text-green-600">{formatCurrency(selectedGroup.pagado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase">Diferencia</p>
+                        <p className="font-bold text-blue-700">{formatCurrency(selectedGroup.diferencia)}</p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-auto">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Fecha</th>
+                            <th>Transportista</th>
+                            <th>Servicio</th>
+                            <th>Status</th>
+                            <th>Costo T</th>
+                            <th>Costo L</th>
+                            <th>Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedGroup.items.map((item) => (
+                            <tr key={item.id}>
+                              <td>{item.fecha}</td>
+                              <td>{item.transporte}</td>
+                              <td>{item.servicio}</td>
+                              <td>{item.status}</td>
+                              <td>{formatCurrency(item.costo_t)}</td>
+                              <td>{formatCurrency(item.costo_l)}</td>
+                              <td>{formatCurrency(item.saldo_a_favor)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500">No hay registros para agrupar.</p>
+                )}
               </div>
             </div>
           </div>

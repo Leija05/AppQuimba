@@ -9,11 +9,26 @@ const COLORS = ['#002FA7', '#0052CC', '#2684FF', '#4C9AFF', '#B3D4FF'];
 
 const PremiumDashboardLogistica = ({ records = [] }) => {
   const [selectedClient, setSelectedClient] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('Todos');
+  const [periodoMeses, setPeriodoMeses] = useState('12');
+
+  const filteredRecords = useMemo(() => {
+    const now = new Date();
+    return records.filter((record) => {
+      const statusOk = statusFilter === 'Todos' || record.status === statusFilter;
+      if (periodoMeses === 'todos') return statusOk;
+      const months = parseInt(periodoMeses, 10);
+      if (Number.isNaN(months)) return statusOk;
+      const fecha = new Date(record.fecha || Date.now());
+      const lowerBound = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+      return statusOk && fecha >= lowerBound;
+    });
+  }, [records, statusFilter, periodoMeses]);
 
   const clientsData = useMemo(() => {
     const clientMap = new Map();
 
-    records.forEach(record => {
+    filteredRecords.forEach(record => {
       const cliente = record.cliente || 'Sin Cliente';
       if (!clientMap.has(cliente)) {
         clientMap.set(cliente, {
@@ -56,7 +71,7 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
       total: client.totalPendiente + client.totalPagado,
       registrosPorMes: Object.values(client.registrosPorMes).sort((a, b) => a.mes.localeCompare(b.mes))
     }));
-  }, [records]);
+  }, [filteredRecords]);
 
   const globalChartData = useMemo(() => {
     return clientsData.map(client => ({
@@ -116,6 +131,37 @@ const PremiumDashboardLogistica = ({ records = [] }) => {
         <div className="flex items-center gap-3 mb-6">
           <Users size={28} weight="duotone" className="text-[#002FA7]" />
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Clientes Registrados</h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <label className="text-sm text-slate-600">
+            Status:&nbsp;
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="form-input"
+            >
+              <option value="Todos">Todos</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Pagado">Pagado</option>
+            </select>
+          </label>
+          <label className="text-sm text-slate-600">
+            Periodo:&nbsp;
+            <select
+              value={periodoMeses}
+              onChange={(e) => setPeriodoMeses(e.target.value)}
+              className="form-input"
+            >
+              <option value="3">Últimos 3 meses</option>
+              <option value="6">Últimos 6 meses</option>
+              <option value="12">Últimos 12 meses</option>
+              <option value="todos">Todo el historial</option>
+            </select>
+          </label>
+          <p className="text-xs text-slate-500">
+            Premium: filtros avanzados para analizar solo lo que te interesa.
+          </p>
         </div>
 
         <ResponsiveContainer width="100%" height={300}>
