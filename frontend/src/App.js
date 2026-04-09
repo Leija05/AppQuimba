@@ -55,7 +55,7 @@ const STORAGE_KEYS = {
   firstLicenseSetup: "gestion-logistica-license-profile"
 };
 
-const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET || "QuimbarPremium2026";
+const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET;
 const RENEW_PAGE_URL = "https://leija05.github.io/Venta/";
 const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL).replace(/\/+$/, "");
 const API_CANDIDATES = BACKEND_URL.endsWith("/api")
