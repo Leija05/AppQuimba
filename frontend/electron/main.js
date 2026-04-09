@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { machineIdSync } = require('node-machine-id');
 
 const isDev = !app.isPackaged;
+const ICON_FILENAME = 'icon.ico';
 
 // --- CONFIGURACIÓN DE LICENCIA ---
 const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
@@ -264,13 +265,17 @@ async function waitForBackendReady() {
 // --- LÓGICA DE VENTANAS ---
 
 function createWindow() {
+  const resolvedIconPath = isDev
+    ? path.join(__dirname, '../assets', ICON_FILENAME)
+    : path.join(process.resourcesPath, 'assets', ICON_FILENAME);
+
   const mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, isDev ? '../assets/icon.ico' : '../build/icon.ico'),
+    icon: resolvedIconPath,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

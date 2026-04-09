@@ -1164,8 +1164,8 @@ function App() {
         {activeSection === "dashboard" && isPremiumUnlocked && (
           <div className="mb-6">
             {activeTab === "logistica"
-              ? <PremiumDashboardLogistica records={transportistaRecords} />
-              : <PremiumDashboardTransportista records={logisticaRecords} />}
+              ? <PremiumDashboardLogistica records={logisticaRecords} />
+              : <PremiumDashboardTransportista records={transportistaRecords} />}
           </div>
         )}
         {activeSection === "clientes" && (

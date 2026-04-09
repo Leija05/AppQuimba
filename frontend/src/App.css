@@ -5,7 +5,8 @@
 }
 .app-shell {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 .sidebar {
     width: 260px;
@@ -14,12 +15,19 @@
     transition: width 0.25s ease;
     padding: 1rem 0.75rem;
     box-shadow: 8px 0 24px rgba(2, 6, 23, 0.08);
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 .sidebar-collapsed .sidebar {
     width: 78px;
 }
 .app-main {
     flex: 1;
+    height: 100vh;
+    overflow-y: auto;
 }
 .sidebar-top { display: flex; align-items: center; gap: .65rem; margin-bottom: 1rem; }
 .sidebar-top h2 { font-size: .85rem; font-weight: 700; margin: 0; line-height: 1.3; }
