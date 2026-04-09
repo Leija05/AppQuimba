@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { machineIdSync } = require('node-machine-id');
 
 const isDev = !app.isPackaged;
+const ICON_FILENAME = 'icon.ico';
 
 // --- CONFIGURACIÓN DE LICENCIA ---
 const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
@@ -264,18 +265,31 @@ async function waitForBackendReady() {
 // --- LÓGICA DE VENTANAS ---
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  const preferredIconPath = isDev
+    ? path.join(__dirname, '../assets', ICON_FILENAME)
+    : path.join(process.resourcesPath, 'assets', ICON_FILENAME);
+  const fallbackIconPath = path.join(__dirname, '../assets', ICON_FILENAME);
+  const resolvedIconPath = fs.existsSync(preferredIconPath)
+    ? preferredIconPath
+    : (fs.existsSync(fallbackIconPath) ? fallbackIconPath : null);
+
+  const windowConfig = {
     width: 1440,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, isDev ? '../assets/icon.ico' : '../build/icon.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
+  };
+
+  if (resolvedIconPath) {
+    windowConfig.icon = resolvedIconPath;
+  }
+
+  const mainWindow = new BrowserWindow(windowConfig);
 
   mainWindow.removeMenu();
 
