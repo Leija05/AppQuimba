@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 
 const STORAGE_KEY_ENABLED = 'gestion-logistica-autosave-enabled';
 const STORAGE_KEY_INTERVAL = 'gestion-logistica-autosave-interval';
+const STORAGE_KEY_LAST_SAVE = 'gestion-logistica-autosave-last-save';
 
 export const useAutoSave = (saveFunction) => {
   const [enabled, setEnabled] = useState(() => {
@@ -13,7 +14,12 @@ export const useAutoSave = (saveFunction) => {
     return localStorage.getItem(STORAGE_KEY_INTERVAL) || '300000';
   });
 
-  const [lastSave, setLastSave] = useState(null);
+  const [lastSave, setLastSave] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_LAST_SAVE);
+    if (!saved) return null;
+    const parsed = new Date(saved);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  });
 
   const updateEnabled = useCallback((newEnabled) => {
     setEnabled(newEnabled);
@@ -31,7 +37,9 @@ export const useAutoSave = (saveFunction) => {
     const performSave = async () => {
       try {
         await saveFunction();
-        setLastSave(new Date());
+        const now = new Date();
+        setLastSave(now);
+        localStorage.setItem(STORAGE_KEY_LAST_SAVE, now.toISOString());
       } catch (error) {
         console.error('Error en auto-guardado:', error);
       }

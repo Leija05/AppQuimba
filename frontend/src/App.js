@@ -88,6 +88,11 @@ const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "curre
 const formatDate = (dateStr) => (!dateStr ? "-" : new Date(dateStr).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" }));
 const toNumber = (value) => Number.parseFloat(value || 0) || 0;
 const todayISO = () => new Date().toISOString().split("T")[0];
+const maskToken = (token) => {
+  if (!token || token === "No registrado") return "No registrado";
+  if (token.length <= 16) return token;
+  return `${token.slice(0, 10)}...${token.slice(-8)}`;
+};
 const hmacSha256Hex = async (payload, secret) => {
   const enc = new TextEncoder();
   const key = await window.crypto.subtle.importKey(
@@ -641,6 +646,16 @@ function App() {
     if (!/^\d{8}$/.test(compact)) return null;
     return new Date(`${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}T23:59:59Z`);
   };
+
+  const currentPremiumToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
+  const premiumExpiryDate = parseTokenExpiry(currentPremiumToken);
+  const premiumDaysLeft = premiumExpiryDate
+    ? Math.ceil((premiumExpiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const autoSaveIntervalMinutes = Math.round(Number(autoSave.interval || 0) / 60000);
+  const autoSaveLastSaved = autoSave.lastSave
+    ? new Date(autoSave.lastSave).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "Sin registro";
 
   useEffect(() => {
     if (!licenseProfile.username || !licenseProfile.businessName) {
@@ -1237,25 +1252,97 @@ function App() {
         )}
         {activeSection === "licencia" && (
           <div className="space-y-4 mb-6">
-            <h2 className="text-xl font-bold">Licencia y Premium</h2>
-            <p>Estado premium: <strong>{isPremiumUnlocked ? "Activo" : "Inactivo"}</strong></p>
-            <p>Token actual: <code>{localStorage.getItem(STORAGE_KEYS.premiumToken) || "No registrado"}</code></p>
-            <button className="btn-primary" onClick={() => setShowPremiumModal(true)}>Activar Premium</button>
+            <div className="premium-license-card">
+              <div className="premium-license-header">
+                <div>
+                  <h2 className="text-xl font-bold">Licencia y Premium</h2>
+                  <p className="text-sm text-slate-500">
+                    Gestiona tu token, consulta vencimiento y controla tu acceso a funciones premium.
+                  </p>
+                </div>
+                <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
+                  {isPremiumUnlocked ? "Activo" : "Inactivo"}
+                </span>
+              </div>
+
+              <div className="premium-license-grid">
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Token actual</p>
+                  <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
+                </div>
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Vencimiento</p>
+                  <p className="premium-license-value">
+                    {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
+                  </p>
+                </div>
+                <div className="premium-license-item">
+                  <p className="premium-license-label">Días restantes</p>
+                  <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
+                    {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="premium-license-actions">
+                <button className="btn-primary" onClick={() => setShowPremiumModal(true)}>Activar / Cambiar Token</button>
+                <button
+                  className="btn-secondary"
+                  onClick={async () => {
+                    if (!currentPremiumToken) return showNotice("No hay token para copiar", "Aviso");
+                    try {
+                      await navigator.clipboard.writeText(currentPremiumToken);
+                      showNotice("Token copiado al portapapeles", "Éxito");
+                    } catch {
+                      showNotice("No se pudo copiar el token", "Error");
+                    }
+                  }}
+                >
+                  <Copy size={16} />Copiar token
+                </button>
+                {isPremiumUnlocked && (
+                  <button className="btn-danger" onClick={() => setShowDeactivatePremiumConfirm(true)}>
+                    Desactivar premium
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {activeSection === "configuracion" && (
           <div className="space-y-5 mb-6">
             <AutoSaveConfig onSave={reloadBackendData} />
-            <div className="metric-card">
+            <div className="metric-card config-card">
               <h3 className="font-semibold mb-2">Información del Sistema</h3>
-              <p className="text-slate-600">{APP_NAME}</p>
+              <p className="text-slate-700 font-medium">{APP_NAME}</p>
               <p className="text-slate-600">{APP_DESCRIPTION}</p>
-              <p className="text-xs text-slate-500 mt-2">Auto guardado: {autoSave.enabled ? "Activo" : "Inactivo"} · Intervalo: {Math.round(Number(autoSave.interval) / 60000)} min</p>
+              <div className="config-kpi-grid">
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Servidor</span>
+                  <span className={`config-kpi-value ${backendAvailable ? "ok" : "warn"}`}>{backendAvailable ? "Conectado" : "Sin conexión"}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Auto guardado</span>
+                  <span className="config-kpi-value">{autoSave.enabled ? "Activo" : "Inactivo"}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Intervalo</span>
+                  <span className="config-kpi-value">{autoSaveIntervalMinutes || 0} min</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Último guardado</span>
+                  <span className="config-kpi-value">{autoSaveLastSaved}</span>
+                </div>
+              </div>
             </div>
-            <div className="metric-card">
+            <div className="metric-card config-card">
               <h3 className="font-semibold mb-2">Persistencia de Datos</h3>
-              <p className="text-slate-700">Tus datos están seguros</p>
-              <p className="text-sm text-slate-500">Todos tus datos se guardan de forma segura. Esto incluye registros, clientes, configuración, filtros, preferencias y datos de licencia.</p>
+              <p className="text-slate-700 font-medium">Tus datos están seguros</p>
+              <ul className="config-bullets">
+                <li>Registros y clientes se sincronizan con el servidor local.</li>
+                <li>Preferencias (tema, filtros, licencia) se conservan en este dispositivo.</li>
+                <li>El auto guardado reduce el riesgo de pérdida de cambios.</li>
+              </ul>
             </div>
           </div>
         )}
