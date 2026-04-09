@@ -481,9 +481,11 @@ function App() {
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
   const isLogistica = activeTab === "logistica";
-  const activeApiBasePath = isLogistica ? "/logistica" : "/transportista";
-  const currentRecords = isLogistica ? logisticaRecords : transportistaRecords;
-  const currentUploads = isLogistica ? logisticaUploads : transportistaUploads;
+  // Nota: Los endpoints quedaron invertidos respecto a la UI histórica.
+  // "Logística" usa /transportista y "Transporte" usa /logistica.
+  const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
+  const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
+  const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
   const currentColumns = isLogistica
     ? (activeLogisticaView === "cliente"
       ? LOGISTICA_CLIENTE_COLUMNS
@@ -738,7 +740,8 @@ function App() {
         headers: { "Content-Type": "multipart/form-data" }
       });
       await reloadBackendData();
-      showNotice(`${response.data?.records_imported || 0} registros importados en ${basePath === "/logistica" ? "Logística" : "Transporte"}`, "Éxito");
+      const sectionName = basePath === "/transportista" ? "Logística" : "Transporte";
+      showNotice(`${response.data?.records_imported || 0} registros importados en ${sectionName}`, "Éxito");
     } catch {
       showNotice("Error al procesar el Excel", "Error");
     } finally {
@@ -1652,12 +1655,12 @@ function App() {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Subir archivos</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="btn-primary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
                     {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
                     Subir Logística
                   </label>
                   <label className="btn-secondary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
                     <UploadSimple size={20} />
                     Subir Transportes
                   </label>
