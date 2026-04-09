@@ -353,11 +353,12 @@ app.whenReady().then(async () => {
   process.env.QUIMBAR_LICENSE_TOKEN = activeLicense.token;
   process.env.QUIMBAR_MACHINE_ID = hwID;
 
-  // 3. SI LA LICENCIA ES VÁLIDA, SE ACTIVA EL BACKEND
+  // 3. ABRIR LA VENTANA INMEDIATAMENTE PARA EVITAR QUE LA APP PAREZCA COLGADA
+  createWindow();
+
+  // 4. SI LA LICENCIA ES VÁLIDA, SE ACTIVA EL BACKEND
   startBackend();
   const ready = await waitForBackendReady();
-  
-  createWindow();
 
   if (!ready) {
     const extra = backendStartupIssue ? `\n\nDetalle técnico:\n${backendStartupIssue}` : '';
