@@ -1333,51 +1333,70 @@ function App() {
         )}
         {activeSection === "licencia" && (
           <div className="space-y-4 mb-6">
-            <div className="premium-license-card">
-              <div className="premium-license-header">
-                <div>
-                  <h2 className="text-xl font-bold">Licencia y Premium</h2>
-                  <p className="text-sm text-slate-500">
-                    Consulta tus tokens activos y la vigencia de cada licencia.
-                  </p>
+            <div>
+              <h2 className="text-xl font-bold">Licencias</h2>
+              <p className="text-sm text-slate-500">
+                Consulta por separado la licencia de activación y la suscripción premium.
+              </p>
+            </div>
+            <div className="license-cards-grid">
+              <div className="premium-license-card">
+                <div className="premium-license-header">
+                  <div>
+                    <h3 className="text-lg font-bold">Licencia de Activación</h3>
+                    <p className="text-sm text-slate-500">Control de acceso principal del programa.</p>
+                  </div>
+                  <span className={`premium-status-pill ${activationLicense?.valid ? "active" : "inactive"}`}>
+                    {activationLicense?.valid ? "Activa" : "Inactiva"}
+                  </span>
                 </div>
-                <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
-                  {isPremiumUnlocked ? "Activo" : "Inactivo"}
-                </span>
+                <div className="premium-license-grid single-column">
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Token de activación del programa</p>
+                    <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Vencimiento de activación</p>
+                    <p className="premium-license-value">
+                      {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
+                    </p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Días restantes de activación</p>
+                    <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
+                      {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="premium-license-grid">
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Token de activación del programa</p>
-                  <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
+              <div className="premium-license-card">
+                <div className="premium-license-header">
+                  <div>
+                    <h3 className="text-lg font-bold">Premium</h3>
+                    <p className="text-sm text-slate-500">Estado y vigencia de funciones avanzadas.</p>
+                  </div>
+                  <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
+                    {isPremiumUnlocked ? "Activo" : "Inactivo"}
+                  </span>
                 </div>
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Vencimiento de activación</p>
-                  <p className="premium-license-value">
-                    {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
-                  </p>
-                </div>
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Días restantes de activación</p>
-                  <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
-                    {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
-                  </p>
-                </div>
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Token actual</p>
-                  <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
-                </div>
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Vencimiento</p>
-                  <p className="premium-license-value">
-                    {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
-                  </p>
-                </div>
-                <div className="premium-license-item">
-                  <p className="premium-license-label">Días restantes</p>
-                  <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
-                    {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
-                  </p>
+                <div className="premium-license-grid single-column">
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Token actual</p>
+                    <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Vencimiento</p>
+                    <p className="premium-license-value">
+                      {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
+                    </p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Días restantes</p>
+                    <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
+                      {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
