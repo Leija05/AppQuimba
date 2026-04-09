@@ -9,9 +9,6 @@ import PremiumDashboardLogistica from "@/components/PremiumDashboardLogistica";
 import PremiumDashboardTransportista from "@/components/PremiumDashboardTransportista";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from 'recharts';
-import {
   Files,
   Truck,
   Package,
@@ -416,22 +413,6 @@ const TransportistaForm = ({ record, onSave, onCancel, loading, clients = [] }) 
   );
 };
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white dark:bg-slate-800 p-4 border border-slate-200 dark:border-slate-700 shadow-xl rounded-xl">
-        <p className="text-xs font-bold text-slate-500 mb-2">{label}</p>
-        <p className="text-sm font-semibold text-emerald-600">Pagado: {formatCurrency(payload[0].value)}</p>
-        <p className="text-sm font-semibold text-red-500">Pendiente: {formatCurrency(payload[1].value)}</p>
-        <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
-          <p className="text-sm font-bold text-slate-800 dark:text-white">Total: {formatCurrency(payload[0].value + payload[1].value)}</p>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
 function App() {
   const [activeTab, setActiveTab] = useState("logistica");
   
@@ -468,7 +449,6 @@ function App() {
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [favoriteFilterInput, setFavoriteFilterInput] = useState("");
-  const [showPremiumDashboard, setShowPremiumDashboard] = useState(false);
   const [activeLogisticaView, setActiveLogisticaView] = useState("archivo_principal");
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
   const [companyName, setCompanyName] = useState(() => localStorage.getItem(STORAGE_KEYS.companyName) || APP_NAME);
@@ -532,6 +512,8 @@ function App() {
         setShowPremiumExpiredModal(true);
       } else {
         setIsPremiumUnlocked(true);
+        setShowPremiumExpiredModal(false);
+        setPremiumExpiredReason("");
       }
     });
     return () => { mounted = false; };
@@ -610,38 +592,6 @@ function App() {
       total_pendiente: record.status === "Pendiente" ? toNumber(record.total) : 0,
     }));
   }, [filteredRecords, isLogistica, activeLogisticaView]);
-
-  // Analytics para el dashboard premium
-  const premiumAnalytics = useMemo(() => {
-    const records = isLogistica ? transportistaRecords : logisticaRecords;
-    
-    const groupedByMonth = records.reduce((acc, record) => {
-      const date = new Date(record.fecha || todayISO());
-      const key = date.toLocaleDateString("es-MX", { month: 'short', year: '2-digit' }).toUpperCase();
-
-      if (!acc[key]) acc[key] = { month: key, pendiente: 0, pagado: 0, total: 0, fullDate: date };
-      const amount = toNumber(record.total);
-      acc[key].total += amount;
-      acc[key][record.status === "Pagado" ? "pagado" : "pendiente"] += amount;
-      return acc;
-    }, {});
-
-    const sortedMonths = Object.values(groupedByMonth)
-      .sort((a, b) => a.fullDate - b.fullDate)
-      .slice(-6);
-
-    const topItems = Object.entries(
-      records.reduce((acc, r) => {
-        const key = isLogistica 
-          ? (r.servicio || "Sin servicio").trim()
-          : (r.transporte || "Sin transporte").trim();
-        acc[key] = (acc[key] || 0) + toNumber(r.total);
-        return acc;
-      }, {})
-    ).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-    return { monthData: sortedMonths, topItems };
-  }, [logisticaRecords, transportistaRecords, isLogistica]);
 
   const reloadBackendData = async () => {
     const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
@@ -1139,7 +1089,7 @@ function App() {
   };
 
   return (
-    <div className={`app-container ${darkMode ? "dark-theme" : ""}`}>
+    <div className={`app-container ${darkMode ? "dark-theme dark" : ""}`}>
       <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         <aside className="sidebar">
           <div className="sidebar-top">
@@ -1149,7 +1099,7 @@ function App() {
             {!sidebarCollapsed && <h2>{APP_NAME}</h2>}
           </div>
           <nav className="sidebar-nav">
-            <button className={`sidebar-item ${activeSection === "dashboard" ? "active" : ""}`} onClick={() => { setActiveSection("dashboard"); setShowPremiumDashboard(true); }}>
+            <button className={`sidebar-item ${activeSection === "dashboard" ? "active" : ""}`} onClick={() => setActiveSection("dashboard")}>
               <ChartLine size={18} /> {!sidebarCollapsed && "Dashboard"}
             </button>
             <button className={`sidebar-item ${activeSection === "principal" ? "active" : ""}`} onClick={() => setActiveSection("principal")}>
@@ -1427,9 +1377,9 @@ function App() {
         {/* Botón Dashboard Premium */}
         {isPremiumUnlocked && (
           <div className="flex justify-end mb-4">
-            <button onClick={() => setShowPremiumDashboard(true)} className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800">
+            <button onClick={() => setActiveSection("dashboard")} className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800">
               <ChartLine size={20} weight="bold" />
-              Ver Dashboard
+              Ir al Dashboard
             </button>
           </div>
         )}
@@ -1443,59 +1393,6 @@ function App() {
             </button>
           </div>
         </div>
-
-        {/* Dashboard Premium Modal */}
-        {showPremiumDashboard && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-                    <ChartLine size={36} weight="duotone" className="text-blue-600" />
-                    Dashboard {isLogistica ? "Logística" : "Transporte"}
-                  </h2>
-                </div>
-                <button onClick={() => setShowPremiumDashboard(false)} className="p-3 hover:bg-slate-100 rounded-full">
-                  <X size={24} weight="bold" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-slate-50 p-6 rounded-3xl">
-                  <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">Flujo Mensual</h3>
-                  <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={premiumAnalytics.monthData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 11 }} />
-                        <YAxis hide />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Bar dataKey="pagado" stackId="a" fill="#10B981" barSize={30} />
-                        <Bar dataKey="pendiente" stackId="a" fill="#EF4444" radius={[8, 8, 0, 0]} barSize={30} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="bg-blue-50 p-6 rounded-3xl">
-                  <h3 className="text-xs font-bold text-blue-700 uppercase mb-4">
-                    Top {isLogistica ? "Servicios" : "Transportes"}
-                  </h3>
-                  {premiumAnalytics.topItems.map(([name, total]) => (
-                    <button
-                      key={name}
-                      onClick={() => { setSearchTerm(name); setShowPremiumDashboard(false); }}
-                      className="w-full flex justify-between items-center mb-3 hover:bg-blue-100/50 p-2 rounded-xl"
-                    >
-                      <span className="text-sm font-semibold text-slate-700 truncate">{name}</span>
-                      <span className="text-sm font-bold text-slate-900">{formatCurrency(total)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Filtros Premium */}
         {isPremiumUnlocked && (
@@ -1707,6 +1604,9 @@ function App() {
                 setIsPremiumUnlocked(true);
                 localStorage.setItem(STORAGE_KEYS.premiumToken, premiumKeyInput.trim());
                 setShowPremiumModal(false);
+                setShowPremiumExpiredModal(false);
+                setPremiumExpiredReason("");
+                setLicenseAlert(null);
                 setPremiumKeyInput("");
                 showNotice("Premium activado", "Éxito");
               }}>Activar</button>
