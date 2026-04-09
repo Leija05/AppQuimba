@@ -448,6 +448,7 @@ function App() {
   const [noticeModal, setNoticeModal] = useState({ open: false, title: "", message: "" });
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
+  const [showDeactivatePremiumConfirm, setShowDeactivatePremiumConfirm] = useState(false);
   const [favoriteFilterInput, setFavoriteFilterInput] = useState("");
   const [activeLogisticaView, setActiveLogisticaView] = useState("archivo_principal");
   const [companyLogo, setCompanyLogo] = useState(() => localStorage.getItem(STORAGE_KEYS.logo) || "");
@@ -1660,10 +1661,7 @@ function App() {
                   <button
                     onClick={() => {
                       if (isPremiumUnlocked) {
-                        const confirmed = window.confirm("Estás a punto de desactivar el modo Premium.\nAlgunas funciones avanzadas dejarán de estar disponibles.\n¿Deseas continuar?");
-                        if (!confirmed) return;
-                        setIsPremiumUnlocked(false);
-                        localStorage.removeItem(STORAGE_KEYS.premiumToken);
+                        setShowDeactivatePremiumConfirm(true);
                       } else {
                         setShowPremiumModal(true);
                       }
@@ -1703,6 +1701,36 @@ function App() {
               </button>
               <button className="btn-secondary flex-1" onClick={() => setShowPremiumExpiredModal(false)}>
                 Usar sin premium
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal de confirmación para desactivar premium */}
+      {showDeactivatePremiumConfirm && (
+        <>
+          <div className="dialog-overlay" onClick={() => setShowDeactivatePremiumConfirm(false)} />
+          <div className="dialog-content">
+            <h2 className="text-xl font-bold text-slate-900 mb-3">Desactivar modo Premium</h2>
+            <p className="text-sm text-slate-500 mb-5">
+              Estás a punto de desactivar el modo Premium.
+              Algunas funciones avanzadas dejarán de estar disponibles.
+              ¿Deseas continuar?
+            </p>
+            <div className="flex gap-3">
+              <button
+                className="btn-danger flex-1"
+                onClick={() => {
+                  setIsPremiumUnlocked(false);
+                  localStorage.removeItem(STORAGE_KEYS.premiumToken);
+                  setShowDeactivatePremiumConfirm(false);
+                }}
+              >
+                Confirmar
+              </button>
+              <button className="btn-secondary flex-1" onClick={() => setShowDeactivatePremiumConfirm(false)}>
+                Cancelar
               </button>
             </div>
           </div>
