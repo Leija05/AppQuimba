@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ const AUTO_SAVE_INTERVALS = [
 
 const STORAGE_KEY_ENABLED = 'gestion-logistica-autosave-enabled';
 const STORAGE_KEY_INTERVAL = 'gestion-logistica-autosave-interval';
+const STORAGE_KEY_LAST_SAVE = 'gestion-logistica-autosave-last-save';
 
 const AutoSaveConfig = ({ onSave }) => {
   const [enabled, setEnabled] = useState(() => {
@@ -25,7 +26,13 @@ const AutoSaveConfig = ({ onSave }) => {
     return localStorage.getItem(STORAGE_KEY_INTERVAL) || '300000';
   });
 
-  const [lastSave, setLastSave] = useState(null);
+  const [lastSave, setLastSave] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_LAST_SAVE);
+    if (!saved) return null;
+    const parsed = new Date(saved);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  });
+  const [isSavingNow, setIsSavingNow] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_ENABLED, enabled);
@@ -35,23 +42,36 @@ const AutoSaveConfig = ({ onSave }) => {
     localStorage.setItem(STORAGE_KEY_INTERVAL, interval);
   }, [interval]);
 
+  const performSave = useCallback(async () => {
+    if (!onSave) return;
+    setIsSavingNow(true);
+    try {
+      await onSave();
+      const now = new Date();
+      setLastSave(now);
+      localStorage.setItem(STORAGE_KEY_LAST_SAVE, now.toISOString());
+    } finally {
+      setIsSavingNow(false);
+    }
+  }, [onSave]);
+
   useEffect(() => {
     if (!enabled || !onSave) return;
 
     const intervalId = setInterval(() => {
-      onSave();
-      setLastSave(new Date());
+      performSave();
     }, parseInt(interval));
 
     return () => clearInterval(intervalId);
-  }, [enabled, interval, onSave]);
+  }, [enabled, interval, performSave]);
 
   const formatLastSave = () => {
     if (!lastSave) return 'Nunca';
-    return lastSave.toLocaleTimeString('es-MX', {
+    return lastSave.toLocaleString('es-MX', {
+      day: '2-digit',
+      month: 'short',
       hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
+      minute: '2-digit'
     });
   };
 
@@ -101,8 +121,19 @@ const AutoSaveConfig = ({ onSave }) => {
 
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300 p-2 bg-slate-50 dark:bg-slate-800 rounded-sm">
               <Clock size={16} />
-              <span>Último guardado: {formatLastSave()}</span>
+              <span>
+                Último guardado: {formatLastSave()}
+                {isSavingNow ? " · Guardando..." : ""}
+              </span>
             </div>
+            <button
+              type="button"
+              className="btn-secondary w-full sm:w-auto"
+              onClick={performSave}
+              disabled={isSavingNow}
+            >
+              {isSavingNow ? "Guardando..." : "Guardar ahora"}
+            </button>
           </>
         )}
       </div>

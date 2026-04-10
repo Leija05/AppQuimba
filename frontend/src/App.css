@@ -675,3 +675,166 @@
 .app-container.dark-theme .selection-counter {
     color: #E2E8F0;
 }
+
+.premium-license-card {
+    border: 1px solid #CBD5E1;
+    border-radius: 12px;
+    background: #fff;
+    padding: 1rem;
+}
+
+.premium-license-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.premium-status-pill {
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.premium-status-pill.active {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
+}
+
+.premium-status-pill.inactive {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+
+.premium-license-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.premium-license-grid.single-column {
+    grid-template-columns: 1fr;
+    margin-bottom: 0;
+}
+
+.license-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+.premium-license-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 0.65rem 0.75rem;
+}
+
+.premium-license-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin-bottom: 0.2rem;
+}
+
+.premium-license-value {
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.premium-license-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.config-card {
+    border-radius: 12px;
+}
+
+.config-kpi-grid {
+    margin-top: 0.75rem;
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.config-kpi {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 0.55rem 0.7rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.config-kpi-path {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+}
+
+.config-kpi-path .config-kpi-value {
+    text-align: right;
+    word-break: break-all;
+}
+
+.config-kpi-label {
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.config-kpi-value {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.config-kpi-value.ok { color: #047857; }
+.config-kpi-value.warn { color: #b45309; }
+
+.config-bullets {
+    margin-top: 0.6rem;
+    padding-left: 1rem;
+    color: #475569;
+    font-size: 0.88rem;
+    display: grid;
+    gap: 0.35rem;
+}
+
+@media (min-width: 768px) {
+    .license-cards-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .premium-license-grid,
+    .config-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.app-container.dark-theme .premium-license-card,
+.app-container.dark-theme .premium-license-item,
+.app-container.dark-theme .config-kpi {
+    background: #111827;
+    border-color: #334155;
+}
+
+.app-container.dark-theme .premium-license-value,
+.app-container.dark-theme .config-kpi-value {
+    color: #e2e8f0;
+}
+
+.app-container.dark-theme .premium-license-label,
+.app-container.dark-theme .config-kpi-label,
+.app-container.dark-theme .config-bullets {
+    color: #94a3b8;
+}

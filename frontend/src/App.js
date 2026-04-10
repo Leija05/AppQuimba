@@ -52,7 +52,8 @@ const STORAGE_KEYS = {
   logo: "gestion-logistica-company-logo",
   companyName: "gestion-logistica-company-name",
   sidebarCollapsed: "gestion-logistica-sidebar-collapsed",
-  firstLicenseSetup: "gestion-logistica-license-profile"
+  firstLicenseSetup: "gestion-logistica-license-profile",
+  backupFolder: "gestion-logistica-backup-folder"
 };
 
 const PREMIUM_TOKEN_SECRET = process.env.REACT_APP_PREMIUM_SECRET;
@@ -88,6 +89,11 @@ const formatCurrency = (value) => new Intl.NumberFormat("es-MX", { style: "curre
 const formatDate = (dateStr) => (!dateStr ? "-" : new Date(dateStr).toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" }));
 const toNumber = (value) => Number.parseFloat(value || 0) || 0;
 const todayISO = () => new Date().toISOString().split("T")[0];
+const maskToken = (token) => {
+  if (!token || token === "No registrado") return "No registrado";
+  if (token.length <= 16) return token;
+  return `${token.slice(0, 10)}...${token.slice(-8)}`;
+};
 const hmacSha256Hex = async (payload, secret) => {
   const enc = new TextEncoder();
   const key = await window.crypto.subtle.importKey(
@@ -465,6 +471,11 @@ function App() {
   const [showClientModal, setShowClientModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [activeDashboardView, setActiveDashboardView] = useState("logistica");
+  const [activationLicense, setActivationLicense] = useState({ token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+  const [backupFolderPath, setBackupFolderPath] = useState(() => localStorage.getItem(STORAGE_KEYS.backupFolder) || "");
+  const [backupActivity, setBackupActivity] = useState({ at: "", path: "" });
+  const [lastRealtimeUpdate, setLastRealtimeUpdate] = useState("");
+  const [emptyDataWarned, setEmptyDataWarned] = useState(false);
   const [clientForm, setClientForm] = useState({ nombre: "", correo: "", telefono: "" });
   const [transportExportMode, setTransportExportMode] = useState("pendientes");
   const [exportSettings, setExportSettings] = useState({
@@ -481,9 +492,11 @@ function App() {
   const showNotice = (message, title = "Aviso") => setNoticeModal({ open: true, title, message });
 
   const isLogistica = activeTab === "logistica";
-  const activeApiBasePath = isLogistica ? "/logistica" : "/transportista";
-  const currentRecords = isLogistica ? logisticaRecords : transportistaRecords;
-  const currentUploads = isLogistica ? logisticaUploads : transportistaUploads;
+  // Nota: Los endpoints quedaron invertidos respecto a la UI histórica.
+  // "Logística" usa /transportista y "Transporte" usa /logistica.
+  const activeApiBasePath = isLogistica ? "/transportista" : "/logistica";
+  const currentRecords = isLogistica ? transportistaRecords : logisticaRecords;
+  const currentUploads = isLogistica ? transportistaUploads : logisticaUploads;
   const currentColumns = isLogistica
     ? (activeLogisticaView === "cliente"
       ? LOGISTICA_CLIENTE_COLUMNS
@@ -532,18 +545,21 @@ function App() {
       const maxAttempts = 8;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
+          const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes, licenseDetailsRes] = await Promise.all([
             apiRequest("get", "/logistica/records"),
             apiRequest("get", "/logistica/uploads"),
             apiRequest("get", "/transportista/records"),
             apiRequest("get", "/transportista/uploads"),
-            apiRequest("get", "/clients")
+            apiRequest("get", "/clients"),
+            apiRequest("get", "/license/details")
           ]);
           setLogisticaRecords(logRecordsRes.data || []);
           setLogisticaUploads(logUploadsRes.data || []);
           setTransportistaRecords(transRecordsRes.data || []);
           setTransportistaUploads(transUploadsRes.data || []);
           setClients(clientsRes.data || []);
+          setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+          setLastRealtimeUpdate(new Date().toISOString());
           setBackendAvailable(true);
           setServerBooting(false);
           return;
@@ -602,18 +618,68 @@ function App() {
   }, [filteredRecords, isLogistica, activeLogisticaView]);
 
   const reloadBackendData = async () => {
-    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes] = await Promise.all([
+    const [logRecordsRes, logUploadsRes, transRecordsRes, transUploadsRes, clientsRes, licenseDetailsRes] = await Promise.all([
       apiRequest("get", "/logistica/records"),
       apiRequest("get", "/logistica/uploads"),
       apiRequest("get", "/transportista/records"),
       apiRequest("get", "/transportista/uploads"),
-      apiRequest("get", "/clients")
+      apiRequest("get", "/clients"),
+      apiRequest("get", "/license/details")
     ]);
     setLogisticaRecords(logRecordsRes.data || []);
     setLogisticaUploads(logUploadsRes.data || []);
     setTransportistaRecords(transRecordsRes.data || []);
     setTransportistaUploads(transUploadsRes.data || []);
     setClients(clientsRes.data || []);
+    setActivationLicense(licenseDetailsRes.data || { token: "", expiry_date: "", days_remaining: null, valid: false, reason: "" });
+    setLastRealtimeUpdate(new Date().toISOString());
+  };
+
+  const handleSelectBackupFolder = async () => {
+    if (!window?.desktopAPI?.selectBackupFolder) {
+      return showNotice("Esta función está disponible en la app de escritorio.", "Aviso");
+    }
+    const result = await window.desktopAPI.selectBackupFolder();
+    if (result?.canceled) return;
+    if (result?.folderPath) {
+      setBackupFolderPath(result.folderPath);
+      localStorage.setItem(STORAGE_KEYS.backupFolder, result.folderPath);
+      showNotice(`Carpeta de respaldo seleccionada:\n${result.folderPath}`, "Respaldo");
+    }
+  };
+
+  const handleSaveBackupNow = async () => {
+    if (!backupFolderPath) return showNotice("Selecciona primero una carpeta de respaldo.", "Aviso");
+    if (!window?.desktopAPI?.saveBackupJson) {
+      return showNotice("Guardado en carpeta disponible solo en escritorio.", "Aviso");
+    }
+    try {
+      const exported = await apiRequest("get", "/backup/export");
+      const saveResult = await window.desktopAPI.saveBackupJson({ folderPath: backupFolderPath, data: exported.data });
+      if (!saveResult?.ok) throw new Error(saveResult?.error || "No se pudo guardar");
+      const at = new Date().toISOString();
+      setBackupActivity({ at, path: saveResult.filePath });
+      showNotice(`Respaldo guardado correctamente.\nRuta: ${saveResult.filePath}`, "Respaldo");
+    } catch (error) {
+      showNotice(`Error al guardar respaldo: ${error?.message || "desconocido"}`, "Error");
+    }
+  };
+
+  const handleLoadBackupFromFolder = async () => {
+    if (!backupFolderPath) return showNotice("Selecciona primero una carpeta de respaldo.", "Aviso");
+    if (!window?.desktopAPI?.loadBackupJson) {
+      return showNotice("Carga desde carpeta disponible solo en escritorio.", "Aviso");
+    }
+    try {
+      const loaded = await window.desktopAPI.loadBackupJson({ folderPath: backupFolderPath });
+      if (!loaded?.ok) throw new Error(loaded?.error || "No se encontró respaldo");
+      await apiRequest("post", "/backup/import", { data: loaded.data });
+      await reloadBackendData();
+      setBackupActivity({ at: new Date().toISOString(), path: loaded.filePath });
+      showNotice(`Respaldo cargado correctamente.\nOrigen: ${loaded.filePath}`, "Respaldo restaurado");
+    } catch (error) {
+      showNotice(`Error al cargar respaldo: ${error?.message || "desconocido"}`, "Error");
+    }
   };
 
   const autoSave = useAutoSave(async () => {
@@ -632,6 +698,21 @@ function App() {
     return () => window.removeEventListener("beforeunload", saveOnClose);
   }, [backendAvailable]);
 
+  useEffect(() => {
+    if (!backendAvailable) return;
+    const realtimeInterval = window.setInterval(() => {
+      reloadBackendData().catch(() => {});
+    }, 20000);
+    return () => window.clearInterval(realtimeInterval);
+  }, [backendAvailable]);
+
+  useEffect(() => {
+    const noData = logisticaRecords.length === 0 && transportistaRecords.length === 0 && clients.length === 0;
+    if (!noData || emptyDataWarned) return;
+    setEmptyDataWarned(true);
+    showNotice("Se detectaron campos/datos vacíos. Puedes seleccionar una carpeta y cargar un respaldo.", "Datos vacíos");
+  }, [logisticaRecords.length, transportistaRecords.length, clients.length, emptyDataWarned]);
+
   const parseTokenExpiry = (token) => {
     const parts = (token || "").split(".");
     if (parts.length < 2) return null;
@@ -639,6 +720,23 @@ function App() {
     if (!/^\d{8}$/.test(compact)) return null;
     return new Date(`${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}T23:59:59Z`);
   };
+
+  const currentPremiumToken = localStorage.getItem(STORAGE_KEYS.premiumToken) || "";
+  const premiumExpiryDate = parseTokenExpiry(currentPremiumToken);
+  const premiumDaysLeft = premiumExpiryDate
+    ? Math.ceil((premiumExpiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const autoSaveIntervalMinutes = Math.round(Number(autoSave.interval || 0) / 60000);
+  const autoSaveLastSaved = autoSave.lastSave
+    ? new Date(autoSave.lastSave).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "Sin registro";
+  const activationExpiryDate = activationLicense?.expiry_date ? new Date(activationLicense.expiry_date) : null;
+  const lastRealtimeUpdateLabel = lastRealtimeUpdate
+    ? new Date(lastRealtimeUpdate).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "Sin sincronización";
+  const lastBackupLabel = backupActivity.at
+    ? new Date(backupActivity.at).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "Sin respaldo reciente";
 
   useEffect(() => {
     if (!licenseProfile.username || !licenseProfile.businessName) {
@@ -738,7 +836,8 @@ function App() {
         headers: { "Content-Type": "multipart/form-data" }
       });
       await reloadBackendData();
-      showNotice(`${response.data?.records_imported || 0} registros importados en ${basePath === "/logistica" ? "Logística" : "Transporte"}`, "Éxito");
+      const sectionName = basePath === "/transportista" ? "Logística" : "Transporte";
+      showNotice(`${response.data?.records_imported || 0} registros importados en ${sectionName}`, "Éxito");
     } catch {
       showNotice("Error al procesar el Excel", "Error");
     } finally {
@@ -1234,25 +1333,134 @@ function App() {
         )}
         {activeSection === "licencia" && (
           <div className="space-y-4 mb-6">
-            <h2 className="text-xl font-bold">Licencia y Premium</h2>
-            <p>Estado premium: <strong>{isPremiumUnlocked ? "Activo" : "Inactivo"}</strong></p>
-            <p>Token actual: <code>{localStorage.getItem(STORAGE_KEYS.premiumToken) || "No registrado"}</code></p>
-            <button className="btn-primary" onClick={() => setShowPremiumModal(true)}>Activar Premium</button>
+            <div>
+              <h2 className="text-xl font-bold">Licencias</h2>
+              <p className="text-sm text-slate-500">
+                Consulta por separado la licencia de activación y la suscripción premium.
+              </p>
+            </div>
+            <div className="license-cards-grid">
+              <div className="premium-license-card">
+                <div className="premium-license-header">
+                  <div>
+                    <h3 className="text-lg font-bold">Licencia de Activación</h3>
+                    <p className="text-sm text-slate-500">Control de acceso principal del programa.</p>
+                  </div>
+                  <span className={`premium-status-pill ${activationLicense?.valid ? "active" : "inactive"}`}>
+                    {activationLicense?.valid ? "Activa" : "Inactiva"}
+                  </span>
+                </div>
+                <div className="premium-license-grid single-column">
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Token de activación del programa</p>
+                    <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Vencimiento de activación</p>
+                    <p className="premium-license-value">
+                      {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
+                    </p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Días restantes de activación</p>
+                    <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
+                      {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="premium-license-card">
+                <div className="premium-license-header">
+                  <div>
+                    <h3 className="text-lg font-bold">Premium</h3>
+                    <p className="text-sm text-slate-500">Estado y vigencia de funciones avanzadas.</p>
+                  </div>
+                  <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
+                    {isPremiumUnlocked ? "Activo" : "Inactivo"}
+                  </span>
+                </div>
+                <div className="premium-license-grid single-column">
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Token actual</p>
+                    <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Vencimiento</p>
+                    <p className="premium-license-value">
+                      {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
+                    </p>
+                  </div>
+                  <div className="premium-license-item">
+                    <p className="premium-license-label">Días restantes</p>
+                    <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
+                      {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
         {activeSection === "configuracion" && (
           <div className="space-y-5 mb-6">
             <AutoSaveConfig onSave={reloadBackendData} />
-            <div className="metric-card">
+            <div className="metric-card config-card">
               <h3 className="font-semibold mb-2">Información del Sistema</h3>
-              <p className="text-slate-600">{APP_NAME}</p>
+              <p className="text-slate-700 font-medium">{APP_NAME}</p>
               <p className="text-slate-600">{APP_DESCRIPTION}</p>
-              <p className="text-xs text-slate-500 mt-2">Auto guardado: {autoSave.enabled ? "Activo" : "Inactivo"} · Intervalo: {Math.round(Number(autoSave.interval) / 60000)} min</p>
+              <div className="config-kpi-grid">
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Servidor</span>
+                  <span className={`config-kpi-value ${backendAvailable ? "ok" : "warn"}`}>{backendAvailable ? "Conectado" : "Sin conexión"}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Auto guardado</span>
+                  <span className="config-kpi-value">{autoSave.enabled ? "Activo" : "Inactivo"}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Intervalo</span>
+                  <span className="config-kpi-value">{autoSaveIntervalMinutes || 0} min</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Último guardado</span>
+                  <span className="config-kpi-value">{autoSaveLastSaved}</span>
+                </div>
+              </div>
             </div>
-            <div className="metric-card">
+            <div className="metric-card config-card">
               <h3 className="font-semibold mb-2">Persistencia de Datos</h3>
-              <p className="text-slate-700">Tus datos están seguros</p>
-              <p className="text-sm text-slate-500">Todos tus datos se guardan de forma segura. Esto incluye registros, clientes, configuración, filtros, preferencias y datos de licencia.</p>
+              <p className="text-slate-700 font-medium">Tus datos están seguros</p>
+              <ul className="config-bullets">
+                <li>Registros y clientes se sincronizan con el servidor local.</li>
+                <li>Preferencias (tema, filtros, licencia) se conservan en este dispositivo.</li>
+                <li>El auto guardado reduce el riesgo de pérdida de cambios.</li>
+              </ul>
+            </div>
+            <div className="metric-card config-card">
+              <h3 className="font-semibold mb-2">Respaldo y actualización en tiempo real</h3>
+              <div className="config-kpi-grid">
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Última sincronización</span>
+                  <span className="config-kpi-value">{lastRealtimeUpdateLabel}</span>
+                </div>
+                <div className="config-kpi">
+                  <span className="config-kpi-label">Último respaldo</span>
+                  <span className="config-kpi-value">{lastBackupLabel}</span>
+                </div>
+                <div className="config-kpi config-kpi-path">
+                  <span className="config-kpi-label">Carpeta de respaldo</span>
+                  <span className="config-kpi-value">{backupFolderPath || "No seleccionada"}</span>
+                </div>
+              </div>
+              <div className="premium-bulk mt-3">
+                <button className="btn-secondary" onClick={handleSelectBackupFolder}>Seleccionar carpeta</button>
+                <button className="btn-primary" onClick={handleSaveBackupNow}>Guardar respaldo ahora</button>
+                <button className="btn-secondary" onClick={handleLoadBackupFromFolder}>Cargar respaldo</button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Cuando se guarda un respaldo, la app muestra un aviso con la ruta exacta del archivo.
+              </p>
             </div>
           </div>
         )}
@@ -1652,12 +1860,12 @@ function App() {
                 <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Subir archivos</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="btn-primary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "logistica") setActiveTab("logistica"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
                     {uploading ? <SpinnerGap className="spinner" size={20} /> : <UploadSimple size={20} />}
                     Subir Logística
                   </label>
                   <label className="btn-secondary cursor-pointer">
-                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/transportista"); }} className="hidden" disabled={uploading} />
+                    <input type="file" accept=".xlsx,.xls" onChange={(e) => { if (activeTab !== "transporte") setActiveTab("transporte"); handleFileUpload(e, "/logistica"); }} className="hidden" disabled={uploading} />
                     <UploadSimple size={20} />
                     Subir Transportes
                   </label>

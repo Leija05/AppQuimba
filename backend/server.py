@@ -926,6 +926,33 @@ async def verify_license():
     return {"valid": valid, "reason": reason}
 
 
+@api_router.get("/license/details")
+async def get_license_details():
+    token = os.environ.get("QUIMBAR_LICENSE_TOKEN", "")
+    machine_id = os.environ.get("QUIMBAR_MACHINE_ID", "")
+    valid, reason = _validate_token(token, machine_id or None)
+    expiry_date = ""
+    days_remaining = None
+
+    if token:
+        try:
+            compact = token.split(".")[1]
+            expiry_dt = datetime.strptime(compact, "%Y%m%d").replace(tzinfo=timezone.utc)
+            expiry_date = expiry_dt.isoformat()
+            days_remaining = (expiry_dt.date() - datetime.now(timezone.utc).date()).days
+        except Exception:
+            expiry_date = ""
+            days_remaining = None
+
+    return {
+        "valid": valid,
+        "reason": reason,
+        "token": token,
+        "expiry_date": expiry_date,
+        "days_remaining": days_remaining,
+    }
+
+
 @api_router.get("/license/server-time")
 async def get_server_time():
     now = datetime.now(timezone.utc)
@@ -971,6 +998,40 @@ async def notify_license_expiration(payload: LicenseNotificationPayload):
     except Exception as error:
         logger.error("Error enviando correo de licencia: %s", error)
         raise HTTPException(status_code=500, detail="No se pudo enviar notificación de licencia")
+
+
+@api_router.get("/backup/export")
+async def export_backup():
+    async with _records_lock:
+        logistica_records = await load_json(LOGISTICA_RECORDS_FILE)
+        transportista_records = await load_json(TRANSPORTISTA_RECORDS_FILE)
+        logistica_uploads = await load_json(LOGISTICA_UPLOADS_FILE)
+        transportista_uploads = await load_json(TRANSPORTISTA_UPLOADS_FILE)
+        clients = await load_json(CLIENTS_FILE)
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "logistica_records": logistica_records,
+        "transportista_records": transportista_records,
+        "logistica_uploads": logistica_uploads,
+        "transportista_uploads": transportista_uploads,
+        "clients": clients,
+    }
+
+
+@api_router.post("/backup/import")
+async def import_backup(payload: dict):
+    def _as_list(value):
+        return value if isinstance(value, list) else []
+
+    async with _records_lock:
+        await save_json(LOGISTICA_RECORDS_FILE, _as_list(payload.get("logistica_records")))
+        await save_json(TRANSPORTISTA_RECORDS_FILE, _as_list(payload.get("transportista_records")))
+        await save_json(LOGISTICA_UPLOADS_FILE, _as_list(payload.get("logistica_uploads")))
+        await save_json(TRANSPORTISTA_UPLOADS_FILE, _as_list(payload.get("transportista_uploads")))
+        await save_json(CLIENTS_FILE, _as_list(payload.get("clients")))
+
+    return {"message": "Respaldo restaurado"}
 
 
 # ============== Legacy/Common Routes ==============
