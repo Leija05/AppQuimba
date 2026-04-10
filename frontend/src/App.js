@@ -452,6 +452,7 @@ function App() {
   const [serverBooting, setServerBooting] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(false);
   const [noticeModal, setNoticeModal] = useState({ open: false, title: "", message: "" });
+  const [autoSaveNotice, setAutoSaveNotice] = useState({ visible: false, savedAt: null });
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [showDeactivatePremiumConfirm, setShowDeactivatePremiumConfirm] = useState(false);
@@ -686,7 +687,21 @@ function App() {
     if (backendAvailable) {
       await reloadBackendData();
     }
+  }, {
+    onAutoSaveSuccess: ({ source, savedAt }) => {
+      if (source === "auto") {
+        setAutoSaveNotice({ visible: true, savedAt });
+      }
+    }
   });
+
+  useEffect(() => {
+    if (!autoSaveNotice.visible) return;
+    const timeoutId = window.setTimeout(() => {
+      setAutoSaveNotice((prev) => ({ ...prev, visible: false }));
+    }, 3500);
+    return () => window.clearTimeout(timeoutId);
+  }, [autoSaveNotice.visible]);
 
   useEffect(() => {
     const saveOnClose = () => {
@@ -1404,7 +1419,7 @@ function App() {
         )}
         {activeSection === "configuracion" && (
           <div className="space-y-5 mb-6">
-            <AutoSaveConfig onSave={reloadBackendData} />
+            <AutoSaveConfig autoSave={autoSave} />
             <div className="metric-card config-card">
               <h3 className="font-semibold mb-2">Información del Sistema</h3>
               <p className="text-slate-700 font-medium">{APP_NAME}</p>
@@ -1804,6 +1819,17 @@ function App() {
       </main>
       </div>
       </div>
+
+      {autoSaveNotice.visible && (
+        <div className="fixed top-4 right-4 z-[90] rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-md">
+          <p className="text-sm font-semibold text-emerald-700">Auto guardado ejecutado</p>
+          <p className="text-xs text-emerald-600">
+            Última actualización: {autoSaveNotice.savedAt
+              ? new Date(autoSaveNotice.savedAt).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+              : "justo ahora"}
+          </p>
+        </div>
+      )}
 
       {/* Modal de formulario */}
       {showForm && (

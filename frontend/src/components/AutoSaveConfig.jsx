@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -12,66 +12,25 @@ const AUTO_SAVE_INTERVALS = [
   { value: '3600000', label: 'Cada 1 hora' },
 ];
 
-const STORAGE_KEY_ENABLED = 'gestion-logistica-autosave-enabled';
-const STORAGE_KEY_INTERVAL = 'gestion-logistica-autosave-interval';
-const STORAGE_KEY_LAST_SAVE = 'gestion-logistica-autosave-last-save';
-
-const AutoSaveConfig = ({ onSave }) => {
-  const [enabled, setEnabled] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_ENABLED);
-    return saved === null ? true : saved === 'true';
-  });
-
-  const [interval, setAutoSaveInterval] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY_INTERVAL) || '300000';
-  });
-
-  const [lastSave, setLastSave] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_LAST_SAVE);
-    if (!saved) return null;
-    const parsed = new Date(saved);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  });
-  const [isSavingNow, setIsSavingNow] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_ENABLED, enabled);
-  }, [enabled]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_INTERVAL, interval);
-  }, [interval]);
-
-  const performSave = useCallback(async () => {
-    if (!onSave) return;
-    setIsSavingNow(true);
-    try {
-      await onSave();
-      const now = new Date();
-      setLastSave(now);
-      localStorage.setItem(STORAGE_KEY_LAST_SAVE, now.toISOString());
-    } finally {
-      setIsSavingNow(false);
-    }
-  }, [onSave]);
-
-  useEffect(() => {
-    if (!enabled || !onSave) return;
-
-    const intervalId = setInterval(() => {
-      performSave();
-    }, parseInt(interval));
-
-    return () => clearInterval(intervalId);
-  }, [enabled, interval, performSave]);
+const AutoSaveConfig = ({ autoSave }) => {
+  const {
+    enabled = true,
+    interval = '300000',
+    lastSave = null,
+    isSaving = false,
+    updateEnabled,
+    updateInterval,
+    performSave,
+  } = autoSave || {};
 
   const formatLastSave = () => {
     if (!lastSave) return 'Nunca';
-    return lastSave.toLocaleString('es-MX', {
+    return new Date(lastSave).toLocaleString('es-MX', {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      second: '2-digit'
     });
   };
 
@@ -95,7 +54,7 @@ const AutoSaveConfig = ({ onSave }) => {
           <Switch
             id="autosave-enabled"
             checked={enabled}
-            onCheckedChange={setEnabled}
+            onCheckedChange={updateEnabled}
           />
         </div>
 
@@ -105,7 +64,7 @@ const AutoSaveConfig = ({ onSave }) => {
               <Label htmlFor="autosave-interval" className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Frecuencia de guardado
               </Label>
-              <Select value={interval} onValueChange={setAutoSaveInterval}>
+              <Select value={interval} onValueChange={updateInterval}>
                 <SelectTrigger id="autosave-interval" className="w-full">
                   <SelectValue placeholder="Selecciona un intervalo" />
                 </SelectTrigger>
@@ -123,16 +82,16 @@ const AutoSaveConfig = ({ onSave }) => {
               <Clock size={16} />
               <span>
                 Último guardado: {formatLastSave()}
-                {isSavingNow ? " · Guardando..." : ""}
+                {isSaving ? ' · Guardando...' : ''}
               </span>
             </div>
             <button
               type="button"
               className="btn-secondary w-full sm:w-auto"
-              onClick={performSave}
-              disabled={isSavingNow}
+              onClick={() => performSave?.('manual')}
+              disabled={isSaving}
             >
-              {isSavingNow ? "Guardando..." : "Guardar ahora"}
+              {isSaving ? 'Guardando...' : 'Guardar ahora'}
             </button>
           </>
         )}
