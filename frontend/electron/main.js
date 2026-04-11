@@ -10,7 +10,7 @@ const ICON_FILENAME = 'icon.ico';
 const APP_USER_MODEL_ID = 'com.gestionlogistica.app';
 
 // --- CONFIGURACIÓN DE LICENCIA ---
-const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET || 'QuimbarToken2026';
+const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET;
 const ALGORITHM = 'aes-256-cbc';
 const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionLogistica');
 const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');

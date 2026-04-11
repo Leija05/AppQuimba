@@ -188,9 +188,9 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
   const normalizedSearch = searchTerm.trim().toLowerCase();
   return records.filter((record) => {
     const matchesStatus = statusFilter === "Todos" || record.status === statusFilter;
-    
+
     const searchFields = [record.fecha, record.cliente, record.transporte, record.carta_porte, record.shipment, record.servicio, record.status];
-    
+
     const matchesSearch = !normalizedSearch || searchFields.some((field) =>
       String(field || "").toLowerCase().includes(normalizedSearch)
     );
@@ -200,9 +200,9 @@ const applyFilters = (records, searchTerm, statusFilter, premiumFilters, premium
     const dateOk =
       (!premiumFilters.from || new Date(record.fecha) >= new Date(premiumFilters.from)) &&
       (!premiumFilters.to || new Date(record.fecha) <= new Date(premiumFilters.to));
-    
+
     const fieldOk = !premiumFilters.field || (record.transporte || "").toLowerCase().includes(premiumFilters.field.toLowerCase()) || (record.cliente || "").toLowerCase().includes(premiumFilters.field.toLowerCase());
-    
+
     const servicioOk = !premiumFilters.servicio || (record.servicio || "").toLowerCase().includes(premiumFilters.servicio.toLowerCase());
     const premiumStatusOk = !premiumFilters.status || premiumFilters.status === "Todos" || record.status === premiumFilters.status;
 
@@ -421,15 +421,15 @@ const TransportistaForm = ({ record, onSave, onCancel, loading, clients = [] }) 
 
 function App() {
   const [activeTab, setActiveTab] = useState("logistica");
-  
+
   // Estados separados para Logística
   const [logisticaRecords, setLogisticaRecords] = useState([]);
   const [logisticaUploads, setLogisticaUploads] = useState([]);
-  
+
   // Estados separados para Transportista
   const [transportistaRecords, setTransportistaRecords] = useState([]);
   const [transportistaUploads, setTransportistaUploads] = useState([]);
-  
+
   const [favoriteFilters, setFavoriteFilters] = useState(() => readJSON(STORAGE_KEYS.favoriteFilters, []));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -452,6 +452,7 @@ function App() {
   const [serverBooting, setServerBooting] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(false);
   const [noticeModal, setNoticeModal] = useState({ open: false, title: "", message: "" });
+  const [autoSaveNotice, setAutoSaveNotice] = useState({ visible: false, savedAt: null });
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [showFavoriteFilterModal, setShowFavoriteFilterModal] = useState(false);
   const [showDeactivatePremiumConfirm, setShowDeactivatePremiumConfirm] = useState(false);
@@ -686,12 +687,35 @@ function App() {
     if (backendAvailable) {
       await reloadBackendData();
     }
+  }, {
+    onAutoSaveSuccess: ({ source, savedAt }) => {
+      if (source === "auto") {
+        setAutoSaveNotice({ visible: true, savedAt });
+      }
+    }
   });
 
   useEffect(() => {
+    let timeoutId;
+    if (autoSaveNotice.visible) {
+      timeoutId = window.setTimeout(() => {
+        setAutoSaveNotice({ visible: false, savedAt: null });
+      }, 3500);
+    }
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [autoSaveNotice.visible]);
+  const triggerAutoSaveNotice = () => {
+    setAutoSaveNotice({
+      visible: true,
+      savedAt: new Date().toLocaleTimeString()
+    });
+  };
+  useEffect(() => {
     const saveOnClose = () => {
       if (backendAvailable) {
-        reloadBackendData().catch(() => {});
+        reloadBackendData().catch(() => { });
       }
     };
     window.addEventListener("beforeunload", saveOnClose);
@@ -701,7 +725,7 @@ function App() {
   useEffect(() => {
     if (!backendAvailable) return;
     const realtimeInterval = window.setInterval(() => {
-      reloadBackendData().catch(() => {});
+      reloadBackendData().catch(() => { });
     }, 20000);
     return () => window.clearInterval(realtimeInterval);
   }, [backendAvailable]);
@@ -804,7 +828,7 @@ function App() {
 
   const handleDeleteRecord = async (id) => {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    
+
     const basePath = activeApiBasePath;
     await apiRequest("delete", `${basePath}/records/${id}`);
     await reloadBackendData();
@@ -829,7 +853,7 @@ function App() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      
+
       const basePath = sectionOverride || activeApiBasePath;
       const response = await apiRequest("post", `${basePath}/upload-excel`, {
         data: formData,
@@ -886,7 +910,7 @@ function App() {
       try {
         const imageId = workbook.addImage({ base64: companyLogo, extension: companyLogo.includes("image/png") ? "png" : "jpeg" });
         worksheet.addImage(imageId, "A1:B4");
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const headerRow = worksheet.getRow(6);
@@ -906,7 +930,7 @@ function App() {
     exportRecords.forEach(record => {
       const rowData = {};
       exportColumns.forEach(col => {
-        const numericCols = isLogistica 
+        const numericCols = isLogistica
           ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         rowData[col] = numericCols.includes(col)
@@ -918,7 +942,7 @@ function App() {
 
       exportColumns.forEach((col, index) => {
         const cell = row.getCell(index + 1);
-        const numericCols = isLogistica 
+        const numericCols = isLogistica
           ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         if (numericCols.includes(col)) {
@@ -951,7 +975,7 @@ function App() {
     if (!isPremiumUnlocked) return showNotice("Exportar PDF es Premium", "Premium");
 
     const doc = new jsPDF();
-    
+
     const exportRecords = transportExportMode === "total_pendientes"
       ? []
       : (transportExportMode === "todas" || isLogistica
@@ -984,11 +1008,11 @@ function App() {
       if (isLogistica && column === 'costo_t') return 'COSTO JAQ-TRANSPORT';
       return currentColumnLabels[column].toUpperCase();
     });
-    
+
     const body = exportRecords.map((record) => (
       exportColumns.map((column) => {
         if (column === "fecha") return record.fecha;
-        const numericCols = isLogistica 
+        const numericCols = isLogistica
           ? ['costo_t', 'costo_l', 'total', 'saldo_a_favor', 'total_pendiente']
           : ['costo', 'total'];
         if (numericCols.includes(column)) return formatCurrency(record[column]);
@@ -1046,7 +1070,7 @@ function App() {
   const handleMassStatusChange = async (status) => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    
+
     const basePath = activeApiBasePath;
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
     await Promise.all(selected.map((record) => apiRequest("put", `${basePath}/records/${record.id}`, { data: { status } })));
@@ -1058,7 +1082,7 @@ function App() {
   const handleMassDelete = async () => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    
+
     const basePath = activeApiBasePath;
     await Promise.all(selectedIds.map((id) => apiRequest("delete", `${basePath}/records/${id}`)));
     await reloadBackendData();
@@ -1069,17 +1093,17 @@ function App() {
   const handleMassDuplicate = async () => {
     if (!selectedIds.length) return;
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    
+
     const basePath = activeApiBasePath;
     const selected = currentRecords.filter((r) => selectedIds.includes(r.id));
-    
+
     for (const record of selected) {
       const newRecord = isLogistica
         ? { fecha: record.fecha, cliente: record.cliente, costo_t: record.costo_t, transporte: record.transporte, servicio: record.servicio, costo_l: record.costo_l, status: record.status }
         : { fecha: record.fecha, cliente: record.cliente, costo: record.costo, carta_porte: record.carta_porte, servicio: record.servicio, shipment: record.shipment, status: record.status };
       await apiRequest("post", `${basePath}/records`, { data: newRecord });
     }
-    
+
     await reloadBackendData();
     showNotice(`${selected.length} registros duplicados`, "Éxito");
   };
@@ -1090,7 +1114,7 @@ function App() {
       setLoadingUploadId(null);
       return showNotice("Servidor no disponible", "Error");
     }
-    
+
     const basePath = activeApiBasePath;
     await apiRequest("post", `${basePath}/uploads/${uploadId}/load`);
     await reloadBackendData();
@@ -1100,7 +1124,7 @@ function App() {
 
   const handleDeleteUploadedFile = async (uploadId) => {
     if (!backendAvailable) return showNotice("Servidor no disponible", "Error");
-    
+
     const basePath = activeApiBasePath;
     await apiRequest("delete", `${basePath}/uploads/${uploadId}`);
     await reloadBackendData();
@@ -1118,7 +1142,7 @@ function App() {
       setClearingAll(false);
       return showNotice("Servidor no disponible", "Error");
     }
-    
+
     const basePath = activeApiBasePath;
     await Promise.all([
       apiRequest("delete", `${basePath}/records`),
@@ -1224,586 +1248,600 @@ function App() {
           </nav>
         </aside>
         <div className="app-main">
-      <header className="app-header">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              {companyLogo ? <img src={companyLogo} alt="Logo empresa" className="h-10 w-10 object-contain rounded" /> : null}
-              <h1 className="text-2xl font-bold text-slate-900">{companyName || APP_NAME}</h1>
-            </div>
-            <p className="text-sm text-slate-500">
-              {APP_DESCRIPTION} · {serverBooting
-                ? "Iniciando servidor..."
-                : backendAvailable
-                  ? "Conectado al servidor"
-                  : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transporte"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="theme-switch" role="group" aria-label="Cambiar tema">
-              <Sun size={16} className={!darkMode ? "theme-icon active" : "theme-icon"} />
-              <button
-                type="button"
-                onClick={() => setDarkMode((prev) => !prev)}
-                className={`theme-switch-track ${darkMode ? "dark" : ""}`}
-                aria-label={darkMode ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
-                aria-pressed={darkMode}
-              >
-                <span className="theme-switch-thumb" />
-              </button>
-              <Moon size={16} className={darkMode ? "theme-icon active" : "theme-icon"} />
-            </div>
-            <button onClick={() => setShowOptionsModal(true)} className="btn-primary">
-              <Files size={20} weight="duotone" />Opciones
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="main-content max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
-        {licenseAlert && (
-          <div className={`license-alert ${licenseAlert.level}`}>
-            <p>{licenseAlert.text}</p>
-            <button className="btn-primary" onClick={() => window.open(RENEW_PAGE_URL, "_blank", "noopener,noreferrer")}>Renovar licencia</button>
-          </div>
-        )}
-        {activeSection === "dashboard" && isPremiumUnlocked && (
-          <div className="mb-6">
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <button
-                type="button"
-                className={`btn-secondary ${activeDashboardView === "logistica" ? "ring-2 ring-blue-700" : ""}`}
-                onClick={() => setActiveDashboardView("logistica")}
-              >
-                Dashboard Clientes
-              </button>
-              <button
-                type="button"
-                className={`btn-secondary ${activeDashboardView === "transportista" ? "ring-2 ring-blue-700" : ""}`}
-                onClick={() => setActiveDashboardView("transportista")}
-              >
-                Dashboard Transportistas
-              </button>
-            </div>
-
-            {activeDashboardView === "logistica"
-              ? <PremiumDashboardLogistica records={logisticaRecords} />
-              : <PremiumDashboardTransportista records={transportistaRecords} />}
-          </div>
-        )}
-        {activeSection === "clientes" && (
-          <div className="space-y-4 mb-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Clientes</h2>
-              <div className="flex items-center gap-2">
-                <button className={`btn-secondary ${clientViewMode === "lista" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("lista")}><List size={16} />Lista</button>
-                <button className={`btn-secondary ${clientViewMode === "tarjetas" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("tarjetas")}><SquaresFour size={16} />Tarjetas</button>
+          <header className="app-header">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  {companyLogo ? <img src={companyLogo} alt="Logo empresa" className="h-10 w-10 object-contain rounded" /> : null}
+                  <h1 className="text-2xl font-bold text-slate-900">{companyName || APP_NAME}</h1>
+                </div>
+                <p className="text-sm text-slate-500">
+                  {APP_DESCRIPTION} · {serverBooting
+                    ? "Iniciando servidor..."
+                    : backendAvailable
+                      ? "Conectado al servidor"
+                      : "Error: Servidor no disponible"} • {isLogistica ? "Logística" : "Transporte"}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="theme-switch" role="group" aria-label="Cambiar tema">
+                  <Sun size={16} className={!darkMode ? "theme-icon active" : "theme-icon"} />
+                  <button
+                    type="button"
+                    onClick={() => setDarkMode((prev) => !prev)}
+                    className={`theme-switch-track ${darkMode ? "dark" : ""}`}
+                    aria-label={darkMode ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+                    aria-pressed={darkMode}
+                  >
+                    <span className="theme-switch-thumb" />
+                  </button>
+                  <Moon size={16} className={darkMode ? "theme-icon active" : "theme-icon"} />
+                </div>
+                <button onClick={() => setShowOptionsModal(true)} className="btn-primary">
+                  <Files size={20} weight="duotone" />Opciones
+                </button>
               </div>
             </div>
-            {clientViewMode === "tarjetas" ? (
-              <div className="grid md:grid-cols-2 gap-4">
-                {clients.map((client) => (
-                  <div key={client.id} className="metric-card">
-                    <p className="font-semibold">{client.nombre}</p>
-                    <p className="text-sm text-slate-500">{client.correo || "Sin correo"}</p>
-                    <p className="text-sm text-slate-500">{client.telefono || "Sin teléfono"}</p>
-                    <div className="mt-3 flex gap-2">
-                      <button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button>
-                      <button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="table-container">
-                <table className="data-table">
-                  <thead><tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Acciones</th></tr></thead>
-                  <tbody>
-                    {clients.map((client) => (
-                      <tr key={client.id}>
-                        <td>{client.nombre}</td><td>{client.correo || "-"}</td><td>{client.telefono || "-"}</td>
-                        <td className="flex gap-2"><button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button><button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          </header>
+
+          <main className="main-content max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+            {licenseAlert && (
+              <div className={`license-alert ${licenseAlert.level}`}>
+                <p>{licenseAlert.text}</p>
+                <button className="btn-primary" onClick={() => window.open(RENEW_PAGE_URL, "_blank", "noopener,noreferrer")}>Renovar licencia</button>
               </div>
             )}
-          </div>
-        )}
-        {activeSection === "licencia" && (
-          <div className="space-y-4 mb-6">
-            <div>
-              <h2 className="text-xl font-bold">Licencias</h2>
-              <p className="text-sm text-slate-500">
-                Consulta por separado la licencia de activación y la suscripción premium.
-              </p>
-            </div>
-            <div className="license-cards-grid">
-              <div className="premium-license-card">
-                <div className="premium-license-header">
-                  <div>
-                    <h3 className="text-lg font-bold">Licencia de Activación</h3>
-                    <p className="text-sm text-slate-500">Control de acceso principal del programa.</p>
-                  </div>
-                  <span className={`premium-status-pill ${activationLicense?.valid ? "active" : "inactive"}`}>
-                    {activationLicense?.valid ? "Activa" : "Inactiva"}
-                  </span>
+            {activeSection === "dashboard" && isPremiumUnlocked && (
+              <div className="mb-6">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <button
+                    type="button"
+                    className={`btn-secondary ${activeDashboardView === "logistica" ? "ring-2 ring-blue-700" : ""}`}
+                    onClick={() => setActiveDashboardView("logistica")}
+                  >
+                    Dashboard Clientes
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-secondary ${activeDashboardView === "transportista" ? "ring-2 ring-blue-700" : ""}`}
+                    onClick={() => setActiveDashboardView("transportista")}
+                  >
+                    Dashboard Transportistas
+                  </button>
                 </div>
-                <div className="premium-license-grid single-column">
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Token de activación del programa</p>
-                    <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
-                  </div>
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Vencimiento de activación</p>
-                    <p className="premium-license-value">
-                      {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
-                    </p>
-                  </div>
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Días restantes de activación</p>
-                    <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
-                      {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
-                    </p>
-                  </div>
-                </div>
-              </div>
 
-              <div className="premium-license-card">
-                <div className="premium-license-header">
-                  <div>
-                    <h3 className="text-lg font-bold">Premium</h3>
-                    <p className="text-sm text-slate-500">Estado y vigencia de funciones avanzadas.</p>
-                  </div>
-                  <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
-                    {isPremiumUnlocked ? "Activo" : "Inactivo"}
-                  </span>
-                </div>
-                <div className="premium-license-grid single-column">
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Token actual</p>
-                    <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
-                  </div>
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Vencimiento</p>
-                    <p className="premium-license-value">
-                      {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
-                    </p>
-                  </div>
-                  <div className="premium-license-item">
-                    <p className="premium-license-label">Días restantes</p>
-                    <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
-                      {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
-                    </p>
+                {activeDashboardView === "logistica"
+                  ? <PremiumDashboardLogistica records={logisticaRecords} />
+                  : <PremiumDashboardTransportista records={transportistaRecords} />}
+              </div>
+            )}
+            {activeSection === "clientes" && (
+              <div className="space-y-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold">Clientes</h2>
+                  <div className="flex items-center gap-2">
+                    <button className={`btn-secondary ${clientViewMode === "lista" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("lista")}><List size={16} />Lista</button>
+                    <button className={`btn-secondary ${clientViewMode === "tarjetas" ? "ring-2 ring-blue-700" : ""}`} onClick={() => setClientViewMode("tarjetas")}><SquaresFour size={16} />Tarjetas</button>
                   </div>
                 </div>
+                {clientViewMode === "tarjetas" ? (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {clients.map((client) => (
+                      <div key={client.id} className="metric-card">
+                        <p className="font-semibold">{client.nombre}</p>
+                        <p className="text-sm text-slate-500">{client.correo || "Sin correo"}</p>
+                        <p className="text-sm text-slate-500">{client.telefono || "Sin teléfono"}</p>
+                        <div className="mt-3 flex gap-2">
+                          <button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button>
+                          <button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="table-container">
+                    <table className="data-table">
+                      <thead><tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Acciones</th></tr></thead>
+                      <tbody>
+                        {clients.map((client) => (
+                          <tr key={client.id}>
+                            <td>{client.nombre}</td><td>{client.correo || "-"}</td><td>{client.telefono || "-"}</td>
+                            <td className="flex gap-2"><button className="btn-secondary" onClick={() => handleEditClient(client)}>Editar</button><button className="btn-danger" onClick={() => handleDeleteClient(client.id)}>Eliminar</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
-        )}
-        {activeSection === "configuracion" && (
-          <div className="space-y-5 mb-6">
-            <AutoSaveConfig onSave={reloadBackendData} />
-            <div className="metric-card config-card">
-              <h3 className="font-semibold mb-2">Información del Sistema</h3>
-              <p className="text-slate-700 font-medium">{APP_NAME}</p>
-              <p className="text-slate-600">{APP_DESCRIPTION}</p>
-              <div className="config-kpi-grid">
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Servidor</span>
-                  <span className={`config-kpi-value ${backendAvailable ? "ok" : "warn"}`}>{backendAvailable ? "Conectado" : "Sin conexión"}</span>
-                </div>
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Auto guardado</span>
-                  <span className="config-kpi-value">{autoSave.enabled ? "Activo" : "Inactivo"}</span>
-                </div>
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Intervalo</span>
-                  <span className="config-kpi-value">{autoSaveIntervalMinutes || 0} min</span>
-                </div>
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Último guardado</span>
-                  <span className="config-kpi-value">{autoSaveLastSaved}</span>
-                </div>
-              </div>
-            </div>
-            <div className="metric-card config-card">
-              <h3 className="font-semibold mb-2">Persistencia de Datos</h3>
-              <p className="text-slate-700 font-medium">Tus datos están seguros</p>
-              <ul className="config-bullets">
-                <li>Registros y clientes se sincronizan con el servidor local.</li>
-                <li>Preferencias (tema, filtros, licencia) se conservan en este dispositivo.</li>
-                <li>El auto guardado reduce el riesgo de pérdida de cambios.</li>
-              </ul>
-            </div>
-            <div className="metric-card config-card">
-              <h3 className="font-semibold mb-2">Respaldo y actualización en tiempo real</h3>
-              <div className="config-kpi-grid">
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Última sincronización</span>
-                  <span className="config-kpi-value">{lastRealtimeUpdateLabel}</span>
-                </div>
-                <div className="config-kpi">
-                  <span className="config-kpi-label">Último respaldo</span>
-                  <span className="config-kpi-value">{lastBackupLabel}</span>
-                </div>
-                <div className="config-kpi config-kpi-path">
-                  <span className="config-kpi-label">Carpeta de respaldo</span>
-                  <span className="config-kpi-value">{backupFolderPath || "No seleccionada"}</span>
-                </div>
-              </div>
-              <div className="premium-bulk mt-3">
-                <button className="btn-secondary" onClick={handleSelectBackupFolder}>Seleccionar carpeta</button>
-                <button className="btn-primary" onClick={handleSaveBackupNow}>Guardar respaldo ahora</button>
-                <button className="btn-secondary" onClick={handleLoadBackupFromFolder}>Cargar respaldo</button>
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Cuando se guarda un respaldo, la app muestra un aviso con la ruta exacta del archivo.
-              </p>
-            </div>
-          </div>
-        )}
-        {activeSection === "principal" && (
-        <>
-        {/* Pestañas principales */}
-        <div className="hidden md:flex border-b border-slate-300 mb-6">
-          {TABS.map((tab) => (
-            <button 
-              key={tab.id} 
-              onClick={() => { setActiveTab(tab.id); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }} 
-              className={`flex items-center gap-2 px-6 py-4 text-sm font-bold transition-colors border-b-2 -mb-px ${activeTab === tab.id ? "text-[#002FA7] border-[#002FA7] bg-blue-50/50" : "text-slate-500 border-transparent hover:text-slate-700"}`}
-            >
-              <tab.icon size={22} weight={activeTab === tab.id ? "fill" : "regular"} />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {isLogistica && (
-          <div className="flex gap-2 mb-4">
-            <button className={`filter-chip ${activeLogisticaView === "archivo_principal" ? "active" : ""}`} onClick={() => setActiveLogisticaView("archivo_principal")}>Archivo Principal</button>
-            <button className={`filter-chip ${activeLogisticaView === "cliente" ? "active" : ""}`} onClick={() => setActiveLogisticaView("cliente")}>Vista Cliente</button>
-            <button className={`filter-chip ${activeLogisticaView === "transportista" ? "active" : ""}`} onClick={() => setActiveLogisticaView("transportista")}>Vista Transportista</button>
-          </div>
-        )}
-
-        {/* Selector móvil de sección */}
-        <div className="md:hidden mb-4">
-          <select 
-            value={activeTab} 
-            onChange={(e) => { setActiveTab(e.target.value); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }}
-            className="form-input w-full text-lg font-bold"
-          >
-            {TABS.map((tab) => (
-              <option key={tab.id} value={tab.id}>{tab.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Métricas */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <MetricCard label="Total General" value={currentTotals.total_general} variant="default" />
-          <MetricCard label="Total Pendiente" value={currentTotals.total_pendiente} variant="danger" />
-          <MetricCard label="Total Pagado" value={currentTotals.total_pagado} variant="success" />
-          {isLogistica && isPremiumUnlocked && (
-            <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
-          )}
-        </div>
-
-        {/* Modal de exportación */}
-        {exportSettings.showModal && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9000] flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-700">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-[#002FA7]">
-                  <Files size={28} weight="duotone" />
-                </div>
+            )}
+            {activeSection === "licencia" && (
+              <div className="space-y-4 mb-6">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-800 dark:text-white">Configurar Exportación</h3>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{isLogistica ? "Logística" : "Transporte"}</p>
+                  <h2 className="text-xl font-bold">Licencias</h2>
+                  <p className="text-sm text-slate-500">
+                    Consulta por separado la licencia de activación y la suscripción premium.
+                  </p>
                 </div>
-              </div>
+                <div className="license-cards-grid">
+                  <div className="premium-license-card">
+                    <div className="premium-license-header">
+                      <div>
+                        <h3 className="text-lg font-bold">Licencia de Activación</h3>
+                        <p className="text-sm text-slate-500">Control de acceso principal del programa.</p>
+                      </div>
+                      <span className={`premium-status-pill ${activationLicense?.valid ? "active" : "inactive"}`}>
+                        {activationLicense?.valid ? "Activa" : "Inactiva"}
+                      </span>
+                    </div>
+                    <div className="premium-license-grid single-column">
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Token de activación del programa</p>
+                        <p className="premium-license-value"><code>{activationLicense?.token || "No disponible"}</code></p>
+                      </div>
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Vencimiento de activación</p>
+                        <p className="premium-license-value">
+                          {activationExpiryDate ? activationExpiryDate.toLocaleDateString("es-MX") : "Sin fecha"}
+                        </p>
+                      </div>
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Días restantes de activación</p>
+                        <p className={`premium-license-value ${typeof activationLicense?.days_remaining === "number" && activationLicense.days_remaining <= 7 ? "text-amber-600" : ""}`}>
+                          {typeof activationLicense?.days_remaining === "number" ? `${activationLicense.days_remaining} días` : "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Formato</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setExportSettings({ ...exportSettings, lastFormat: 'excel' })}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'excel' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-400'}`}
-                    >
-                      <FileXls size={20} /> Excel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isPremiumUnlocked) {
-                          showNotice("PDF es Premium", "Premium");
-                        } else {
-                          setExportSettings({ ...exportSettings, lastFormat: 'pdf' });
-                        }
-                      }}
-                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'pdf' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-100 text-slate-400'}`}
-                    >
-                      {!isPremiumUnlocked ? <Lock size={18} /> : <FilePdf size={20} />} PDF
-                    </button>
+                  <div className="premium-license-card">
+                    <div className="premium-license-header">
+                      <div>
+                        <h3 className="text-lg font-bold">Premium</h3>
+                        <p className="text-sm text-slate-500">Estado y vigencia de funciones avanzadas.</p>
+                      </div>
+                      <span className={`premium-status-pill ${isPremiumUnlocked ? "active" : "inactive"}`}>
+                        {isPremiumUnlocked ? "Activo" : "Inactivo"}
+                      </span>
+                    </div>
+                    <div className="premium-license-grid single-column">
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Token actual</p>
+                        <p className="premium-license-value"><code>{maskToken(currentPremiumToken || "No registrado")}</code></p>
+                      </div>
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Vencimiento</p>
+                        <p className="premium-license-value">
+                          {premiumExpiryDate ? premiumExpiryDate.toLocaleDateString("es-MX") : "Sin token"}
+                        </p>
+                      </div>
+                      <div className="premium-license-item">
+                        <p className="premium-license-label">Días restantes</p>
+                        <p className={`premium-license-value ${premiumDaysLeft !== null && premiumDaysLeft <= 7 ? "text-amber-600" : ""}`}>
+                          {premiumDaysLeft === null ? "-" : `${premiumDaysLeft} días`}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
+            )}
+            {activeSection === "configuracion" && (
+              <div className="space-y-5 mb-6">
+                <AutoSaveConfig autoSave={autoSave} />
+                <div className="metric-card config-card">
+                  <h3 className="font-semibold mb-2">Información del Sistema</h3>
+                  <p className="text-slate-700 font-medium">{APP_NAME}</p>
+                  <p className="text-slate-600">{APP_DESCRIPTION}</p>
+                  <div className="config-kpi-grid">
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Servidor</span>
+                      <span className={`config-kpi-value ${backendAvailable ? "ok" : "warn"}`}>{backendAvailable ? "Conectado" : "Sin conexión"}</span>
+                    </div>
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Auto guardado</span>
+                      <span className="config-kpi-value">{autoSave.enabled ? "Activo" : "Inactivo"}</span>
+                    </div>
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Intervalo</span>
+                      <span className="config-kpi-value">{autoSaveIntervalMinutes || 0} min</span>
+                    </div>
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Último guardado</span>
+                      <span className="config-kpi-value">{autoSaveLastSaved}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="metric-card config-card">
+                  <h3 className="font-semibold mb-2">Persistencia de Datos</h3>
+                  <p className="text-slate-700 font-medium">Tus datos están seguros</p>
+                  <ul className="config-bullets">
+                    <li>Registros y clientes se sincronizan con el servidor local.</li>
+                    <li>Preferencias (tema, filtros, licencia) se conservan en este dispositivo.</li>
+                    <li>El auto guardado reduce el riesgo de pérdida de cambios.</li>
+                  </ul>
+                </div>
+                <div className="metric-card config-card">
+                  <h3 className="font-semibold mb-2">Respaldo y actualización en tiempo real</h3>
+                  <div className="config-kpi-grid">
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Última sincronización</span>
+                      <span className="config-kpi-value">{lastRealtimeUpdateLabel}</span>
+                    </div>
+                    <div className="config-kpi">
+                      <span className="config-kpi-label">Último respaldo</span>
+                      <span className="config-kpi-value">{lastBackupLabel}</span>
+                    </div>
+                    <div className="config-kpi config-kpi-path">
+                      <span className="config-kpi-label">Carpeta de respaldo</span>
+                      <span className="config-kpi-value">{backupFolderPath || "No seleccionada"}</span>
+                    </div>
+                  </div>
+                  <div className="premium-bulk mt-3">
+                    <button className="btn-secondary" onClick={handleSelectBackupFolder}>Seleccionar carpeta</button>
+                    <button className="btn-primary" onClick={handleSaveBackupNow}>Guardar respaldo ahora</button>
+                    <button className="btn-secondary" onClick={handleLoadBackupFromFolder}>Cargar respaldo</button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Cuando se guarda un respaldo, la app muestra un aviso con la ruta exacta del archivo.
+                  </p>
+                </div>
+              </div>
+            )}
+            {activeSection === "principal" && (
+              <>
+                {/* Pestañas principales */}
+                <div className="hidden md:flex border-b border-slate-300 mb-6">
+                  {TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setActiveTab(tab.id); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }}
+                      className={`flex items-center gap-2 px-6 py-4 text-sm font-bold transition-colors border-b-2 -mb-px ${activeTab === tab.id ? "text-[#002FA7] border-[#002FA7] bg-blue-50/50" : "text-slate-500 border-transparent hover:text-slate-700"}`}
+                    >
+                      <tab.icon size={22} weight={activeTab === tab.id ? "fill" : "regular"} />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
 
-                {!isLogistica && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Exportación Transporte</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button type="button" onClick={() => setTransportExportMode("pendientes")} className={`btn-secondary ${transportExportMode === "pendientes" ? "ring-2 ring-blue-500" : ""}`}>Solo Pendientes</button>
-                      <button type="button" onClick={() => setTransportExportMode("total_pendientes")} className={`btn-secondary ${transportExportMode === "total_pendientes" ? "ring-2 ring-blue-500" : ""}`}>Total Pendientes</button>
-                      <button type="button" onClick={() => setTransportExportMode("todas")} className={`btn-secondary ${transportExportMode === "todas" ? "ring-2 ring-blue-500" : ""}`}>Todas las Columnas</button>
+                {isLogistica && (
+                  <div className="flex gap-2 mb-4">
+                    <button className={`filter-chip ${activeLogisticaView === "archivo_principal" ? "active" : ""}`} onClick={() => setActiveLogisticaView("archivo_principal")}>Archivo Principal</button>
+                    <button className={`filter-chip ${activeLogisticaView === "cliente" ? "active" : ""}`} onClick={() => setActiveLogisticaView("cliente")}>Vista Cliente</button>
+                    <button className={`filter-chip ${activeLogisticaView === "transportista" ? "active" : ""}`} onClick={() => setActiveLogisticaView("transportista")}>Vista Transportista</button>
+                  </div>
+                )}
+
+                {/* Selector móvil de sección */}
+                <div className="md:hidden mb-4">
+                  <select
+                    value={activeTab}
+                    onChange={(e) => { setActiveTab(e.target.value); setSelectedIds([]); setSearchTerm(""); setStatusFilter("Todos"); }}
+                    className="form-input w-full text-lg font-bold"
+                  >
+                    {TABS.map((tab) => (
+                      <option key={tab.id} value={tab.id}>{tab.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Métricas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <MetricCard label="Total General" value={currentTotals.total_general} variant="default" />
+                  <MetricCard label="Total Pendiente" value={currentTotals.total_pendiente} variant="danger" />
+                  <MetricCard label="Total Pagado" value={currentTotals.total_pagado} variant="success" />
+                  {isLogistica && isPremiumUnlocked && (
+                    <MetricCard label="Total Saldo a Favor" value={transportistaTotals.total_saldo_a_favor} variant="default" />
+                  )}
+                </div>
+
+                {/* Modal de exportación */}
+                {exportSettings.showModal && (
+                  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9000] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-900/30 text-[#002FA7]">
+                          <Files size={28} weight="duotone" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-slate-800 dark:text-white">Configurar Exportación</h3>
+                          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">{isLogistica ? "Logística" : "Transporte"}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Formato</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setExportSettings({ ...exportSettings, lastFormat: 'excel' })}
+                              className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'excel' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-400'}`}
+                            >
+                              <FileXls size={20} /> Excel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isPremiumUnlocked) {
+                                  showNotice("PDF es Premium", "Premium");
+                                } else {
+                                  setExportSettings({ ...exportSettings, lastFormat: 'pdf' });
+                                }
+                              }}
+                              className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${exportSettings.lastFormat === 'pdf' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-100 text-slate-400'}`}
+                            >
+                              {!isPremiumUnlocked ? <Lock size={18} /> : <FilePdf size={20} />} PDF
+                            </button>
+                          </div>
+                        </div>
+
+                        {!isLogistica && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2 ml-1">Exportación Transporte</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              <button type="button" onClick={() => setTransportExportMode("pendientes")} className={`btn-secondary ${transportExportMode === "pendientes" ? "ring-2 ring-blue-500" : ""}`}>Solo Pendientes</button>
+                              <button type="button" onClick={() => setTransportExportMode("total_pendientes")} className={`btn-secondary ${transportExportMode === "total_pendientes" ? "ring-2 ring-blue-500" : ""}`}>Total Pendientes</button>
+                              <button type="button" onClick={() => setTransportExportMode("todas")} className={`btn-secondary ${transportExportMode === "todas" ? "ring-2 ring-blue-500" : ""}`}>Todas las Columnas</button>
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Empresa</label>
+                          <input className="form-input w-full" value={companyName} onChange={(e) => setCompanyName(e.target.value.toUpperCase())} />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Correo</label>
+                          <input className="form-input w-full" value={exportSettings.correo} onChange={(e) => setExportSettings({ ...exportSettings, correo: e.target.value })} />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Teléfono</label>
+                            <input className="form-input w-full" value={exportSettings.telefono} onChange={(e) => setExportSettings({ ...exportSettings, telefono: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Dirección</label>
+                            <input className="form-input w-full" value={exportSettings.direccion} onChange={(e) => setExportSettings({ ...exportSettings, direccion: e.target.value.toUpperCase() })} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 mt-8">
+                        <button
+                          className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-lg transition-transform active:scale-95 ${exportSettings.lastFormat === 'pdf' ? 'bg-red-500' : 'bg-emerald-500'}`}
+                          onClick={() => {
+                            if (exportSettings.lastFormat === 'pdf') {
+                              if (!isPremiumUnlocked) return showNotice("PDF es Premium", "Premium");
+                              exportToPDF();
+                            } else {
+                              handleExportExcel();
+                            }
+                            setExportSettings(prev => ({ ...prev, showModal: false }));
+                          }}
+                        >
+                          Descargar
+                        </button>
+                        <button className="px-6 rounded-2xl font-bold text-slate-500 bg-slate-100" onClick={() => setExportSettings(prev => ({ ...prev, showModal: false }))}>
+                          <X size={20} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Empresa</label>
-                  <input className="form-input w-full" value={companyName} onChange={(e) => setCompanyName(e.target.value.toUpperCase())} />
-                </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Correo</label>
-                  <input className="form-input w-full" value={exportSettings.correo} onChange={(e) => setExportSettings({ ...exportSettings, correo: e.target.value })} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Teléfono</label>
-                    <input className="form-input w-full" value={exportSettings.telefono} onChange={(e) => setExportSettings({ ...exportSettings, telefono: e.target.value })} />
+                {/* Botón Dashboard Premium */}
+                {isPremiumUnlocked && (
+                  <div className="flex justify-end mb-4">
+                    <button onClick={() => setActiveSection("dashboard")} className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800">
+                      <ChartLine size={20} weight="bold" />
+                      Ir al Dashboard
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Dirección</label>
-                    <input className="form-input w-full" value={exportSettings.direccion} onChange={(e) => setExportSettings({ ...exportSettings, direccion: e.target.value.toUpperCase() })} />
+                )}
+
+                {/* Barra principal */}
+                <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
+                  <p className="text-sm text-slate-500">{displayedRecords.length} registros en {isLogistica ? "Logística" : "Transporte"} • Cliente: {selectedClient}</p>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+                    <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
+                      <Plus size={20} />Añadir Registro ({isLogistica ? "Logística" : "Transporte"})
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex gap-3 mt-8">
-                <button
-                  className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-lg transition-transform active:scale-95 ${exportSettings.lastFormat === 'pdf' ? 'bg-red-500' : 'bg-emerald-500'}`}
-                  onClick={() => {
-                    if (exportSettings.lastFormat === 'pdf') {
-                      if (!isPremiumUnlocked) return showNotice("PDF es Premium", "Premium");
-                      exportToPDF();
-                    } else {
-                      handleExportExcel();
-                    }
-                    setExportSettings(prev => ({ ...prev, showModal: false }));
-                  }}
-                >
-                  Descargar
-                </button>
-                <button className="px-6 rounded-2xl font-bold text-slate-500 bg-slate-100" onClick={() => setExportSettings(prev => ({ ...prev, showModal: false }))}>
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Botón Dashboard Premium */}
-        {isPremiumUnlocked && (
-          <div className="flex justify-end mb-4">
-            <button onClick={() => setActiveSection("dashboard")} className="btn-primary flex items-center gap-2 bg-[#002FA7] hover:bg-blue-800">
-              <ChartLine size={20} weight="bold" />
-              Ir al Dashboard
-            </button>
-          </div>
-        )}
-
-        {/* Barra principal */}
-        <div className="flex flex-col gap-3 mb-4 md:flex-row md:justify-between md:items-center">
-          <p className="text-sm text-slate-500">{displayedRecords.length} registros en {isLogistica ? "Logística" : "Transporte"} • Cliente: {selectedClient}</p>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-            <button onClick={() => { setSelectedRecord(null); setShowForm(true); }} className="btn-primary">
-              <Plus size={20} />Añadir Registro ({isLogistica ? "Logística" : "Transporte"})
-            </button>
-          </div>
-        </div>
-
-        {/* Filtros Premium */}
-        {isPremiumUnlocked && (
-          <div className="premium-toolbar mb-4">
-            <div className="premium-filters">
-              <div className="search-input-wrapper">
-                <MagnifyingGlass size={18} className="text-slate-400" />
-                <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
-              </div>
-              <div className="filter-chip-group">
-                {["Todos", "Pendiente", "Pagado"].map((f) => (
-                  <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
-                ))}
-              </div>
-              <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
-              <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
-              <input type="text" className="form-input" placeholder="Transportista / Cliente" value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
-              <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
-              <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
-              <select
-                className="form-input"
-                onChange={(e) => {
-                  if (!e.target.value) {
-                    setPremiumFilters({ from: "", to: "", field: "", servicio: "", status: "Todos" });
-                    setSearchTerm("");
-                    setStatusFilter("Todos");
-                    return;
-                  }
-                  const f = favoriteFilters.find((x) => x.id === e.target.value);
-                  if (f) setPremiumFilters(f.filters);
-                }}
-                defaultValue=""
-              >
-                <option value="">Sin filtro guardado</option>
-                {favoriteFilters.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
-
-        {isPremiumUnlocked && selectedIds.length > 0 && (
-          <div className="selection-action-bar">
-            <div className="selection-action-content">
-              <p className="selection-counter">{selectedIds.length} seleccionados</p>
-              <div className="premium-bulk">
-                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
-                <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
-                <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
-                <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
-                <button className="btn-secondary" onClick={() => setSelectedIds([])}><X size={16} />Cancelar</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Manejador de clientes */}
-        <div className="upload-history mb-6">
-          <div className="upload-history-header">
-            <h3><ClockCounterClockwise size={18} /> Manejador de Clientes</h3>
-          </div>
-          <div className="p-4 flex flex-wrap gap-2">
-            <button onClick={() => setSelectedClient("Todos")} className={`filter-chip ${selectedClient === "Todos" ? "active" : ""}`}>Todos</button>
-            {clients.map((client) => (
-              <button
-                key={client.id}
-                onClick={() => setSelectedClient(client.nombre)}
-                className={`filter-chip ${selectedClient === client.nombre ? "active" : ""}`}
-              >
-                {client.nombre}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tabla de registros */}
-        <div className="table-container">
-          {loading ? (
-            <div className="empty-state"><SpinnerGap className="spinner inline-block" size={32} /><p className="mt-2">Cargando...</p></div>
-          ) : displayedRecords.length === 0 ? (
-            <div className="empty-state"><Warning size={48} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-medium">No hay registros</p></div>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    {isPremiumUnlocked && <th></th>}
-                    {currentColumns.map((column) => {
-                      const numericCols = isLogistica 
-                        ? ["costo_t", "costo_l", "total", "saldo_a_favor", "total_pendiente"]
-                        : ["costo", "total"];
-                      const centerCol = column === "acciones";
-                      return (
-                        <th key={column} className={numericCols.includes(column) ? "text-right" : centerCol ? "text-center" : ""}>
-                          {currentColumnLabels[column]}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedRecords.map((record) => (
-                    <tr key={record.id} className={selectedIds.includes(record.id) ? "row-selected" : ""}>
-                      {isPremiumUnlocked && (
-                        <td>
-                          <input 
-                            type="checkbox" 
-                            checked={selectedIds.includes(record.id)} 
-                            onChange={() => setSelectedIds((prev) => prev.includes(record.id) ? prev.filter((id) => id !== record.id) : [...prev, record.id])} 
-                          />
-                        </td>
-                      )}
-                      
-                      {currentColumns
-                        .filter((column) => column !== "acciones")
-                        .map((column) => {
-                          switch (column) {
-                            case "fecha":
-                              return <td key={column}>{formatDate(record.fecha)}</td>;
-                            case "servicio":
-                              return <td key={column}>{record.servicio || "-"}</td>;
-                            case "costo_l":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>;
-                            case "status":
-                              return <td key={column}><StatusBadge status={record.status} /></td>;
-                            case "total_pendiente":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total_pendiente)}</td>;
-                            case "costo_t":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>;
-                            case "transporte":
-                              return <td key={column}>{record.transporte || "-"}</td>;
-                            case "total":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total)}</td>;
-                            case "saldo_a_favor":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>;
-                            case "costo":
-                              return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo)}</td>;
-                            case "carta_porte":
-                              return <td key={column}>{record.carta_porte || "-"}</td>;
-                            case "shipment":
-                              return <td key={column}>{record.shipment || "-"}</td>;
-                            default:
-                              return <td key={column}>-</td>;
+                {/* Filtros Premium */}
+                {isPremiumUnlocked && (
+                  <div className="premium-toolbar mb-4">
+                    <div className="premium-filters">
+                      <div className="search-input-wrapper">
+                        <MagnifyingGlass size={18} className="text-slate-400" />
+                        <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar" className="search-input" />
+                      </div>
+                      <div className="filter-chip-group">
+                        {["Todos", "Pendiente", "Pagado"].map((f) => (
+                          <button key={f} onClick={() => setStatusFilter(f)} className={`filter-chip ${statusFilter === f ? "active" : ""}`}>{f}</button>
+                        ))}
+                      </div>
+                      <input type="date" className="form-input" value={premiumFilters.from} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, from: e.target.value }))} />
+                      <input type="date" className="form-input" value={premiumFilters.to} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, to: e.target.value }))} />
+                      <input type="text" className="form-input" placeholder="Transportista / Cliente" value={premiumFilters.field} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, field: e.target.value }))} />
+                      <input type="text" className="form-input" placeholder="Servicio" value={premiumFilters.servicio} onChange={(e) => setPremiumFilters((prev) => ({ ...prev, servicio: e.target.value }))} />
+                      <button className="btn-secondary" onClick={handleSaveFavoriteFilter}><FloppyDisk size={16} />Guardar</button>
+                      <select
+                        className="form-input"
+                        onChange={(e) => {
+                          if (!e.target.value) {
+                            setPremiumFilters({ from: "", to: "", field: "", servicio: "", status: "Todos" });
+                            setSearchTerm("");
+                            setStatusFilter("Todos");
+                            return;
                           }
-                        })}
-                      
-                      {currentColumns.includes("acciones") && (
-                        <td className="text-center">
-                          <div className="flex justify-center gap-2">
-                            <button
-                              onClick={() => { if (!isPremiumUnlocked) return; setSelectedRecord(record); setShowForm(true); }}
-                              className="p-1 hover:bg-slate-100 rounded disabled:opacity-40"
-                              disabled={!isPremiumUnlocked}
-                              title={isPremiumUnlocked ? "Editar" : "Premium"}
-                            >
-                              <PencilSimple size={18} />
-                            </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm(record.id)}
-                              className="p-1 hover:bg-red-50 rounded"
-                              title="Eliminar"
-                            >
-                              <Trash size={18} className="text-red-500" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          const f = favoriteFilters.find((x) => x.id === e.target.value);
+                          if (f) setPremiumFilters(f.filters);
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="">Sin filtro guardado</option>
+                        {favoriteFilters.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {isPremiumUnlocked && selectedIds.length > 0 && (
+                  <div className="selection-action-bar">
+                    <div className="selection-action-content">
+                      <p className="selection-counter">{selectedIds.length} seleccionados</p>
+                      <div className="premium-bulk">
+                        <button className="btn-secondary" onClick={() => handleMassStatusChange("Pagado")}><ArrowsClockwise size={16} />Pagado</button>
+                        <button className="btn-secondary" onClick={() => handleMassStatusChange("Pendiente")}><ArrowsClockwise size={16} />Pendiente</button>
+                        <button className="btn-secondary" onClick={handleMassDuplicate}><Copy size={16} />Duplicar</button>
+                        <button className="btn-danger" onClick={handleMassDelete}><Trash size={16} />Eliminar</button>
+                        <button className="btn-secondary" onClick={() => setSelectedIds([])}><X size={16} />Cancelar</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Manejador de clientes */}
+                <div className="upload-history mb-6">
+                  <div className="upload-history-header">
+                    <h3><ClockCounterClockwise size={18} /> Manejador de Clientes</h3>
+                  </div>
+                  <div className="p-4 flex flex-wrap gap-2">
+                    <button onClick={() => setSelectedClient("Todos")} className={`filter-chip ${selectedClient === "Todos" ? "active" : ""}`}>Todos</button>
+                    {clients.map((client) => (
+                      <button
+                        key={client.id}
+                        onClick={() => setSelectedClient(client.nombre)}
+                        className={`filter-chip ${selectedClient === client.nombre ? "active" : ""}`}
+                      >
+                        {client.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tabla de registros */}
+                <div className="table-container">
+                  {loading ? (
+                    <div className="empty-state"><SpinnerGap className="spinner inline-block" size={32} /><p className="mt-2">Cargando...</p></div>
+                  ) : displayedRecords.length === 0 ? (
+                    <div className="empty-state"><Warning size={48} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-medium">No hay registros</p></div>
+                  ) : (
+                    <div className="table-scroll">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            {isPremiumUnlocked && <th></th>}
+                            {currentColumns.map((column) => {
+                              const numericCols = isLogistica
+                                ? ["costo_t", "costo_l", "total", "saldo_a_favor", "total_pendiente"]
+                                : ["costo", "total"];
+                              const centerCol = column === "acciones";
+                              return (
+                                <th key={column} className={numericCols.includes(column) ? "text-right" : centerCol ? "text-center" : ""}>
+                                  {currentColumnLabels[column]}
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayedRecords.map((record) => (
+                            <tr key={record.id} className={selectedIds.includes(record.id) ? "row-selected" : ""}>
+                              {isPremiumUnlocked && (
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds.includes(record.id)}
+                                    onChange={() => setSelectedIds((prev) => prev.includes(record.id) ? prev.filter((id) => id !== record.id) : [...prev, record.id])}
+                                  />
+                                </td>
+                              )}
+
+                              {currentColumns
+                                .filter((column) => column !== "acciones")
+                                .map((column) => {
+                                  switch (column) {
+                                    case "fecha":
+                                      return <td key={column}>{formatDate(record.fecha)}</td>;
+                                    case "servicio":
+                                      return <td key={column}>{record.servicio || "-"}</td>;
+                                    case "costo_l":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_l)}</td>;
+                                    case "status":
+                                      return <td key={column}><StatusBadge status={record.status} /></td>;
+                                    case "total_pendiente":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total_pendiente)}</td>;
+                                    case "costo_t":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo_t)}</td>;
+                                    case "transporte":
+                                      return <td key={column}>{record.transporte || "-"}</td>;
+                                    case "total":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.total)}</td>;
+                                    case "saldo_a_favor":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.saldo_a_favor)}</td>;
+                                    case "costo":
+                                      return <td key={column} className="text-right tabular-nums">{formatCurrency(record.costo)}</td>;
+                                    case "carta_porte":
+                                      return <td key={column}>{record.carta_porte || "-"}</td>;
+                                    case "shipment":
+                                      return <td key={column}>{record.shipment || "-"}</td>;
+                                    default:
+                                      return <td key={column}>-</td>;
+                                  }
+                                })}
+
+                              {currentColumns.includes("acciones") && (
+                                <td className="text-center">
+                                  <div className="flex justify-center gap-2">
+                                    <button
+                                      onClick={() => { if (!isPremiumUnlocked) return; setSelectedRecord(record); setShowForm(true); }}
+                                      className="p-1 hover:bg-slate-100 rounded disabled:opacity-40"
+                                      disabled={!isPremiumUnlocked}
+                                      title={isPremiumUnlocked ? "Editar" : "Premium"}
+                                    >
+                                      <PencilSimple size={18} />
+                                    </button>
+                                    <button
+                                      onClick={() => setShowDeleteConfirm(record.id)}
+                                      className="p-1 hover:bg-red-50 rounded"
+                                      title="Eliminar"
+                                    >
+                                      <Trash size={18} className="text-red-500" />
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </main>
         </div>
-        </>
-        )}
-      </main>
       </div>
-      </div>
+
+      {autoSaveNotice.visible && (
+        <div className="fixed bottom-6 right-6 z-[100] animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 border border-emerald-500">
+            <div className="bg-white/20 p-1.5 rounded-full">
+              <FloppyDisk size={20} weight="fill" className="animate-pulse" />
+            </div>
+            <div>
+              <p className="text-sm font-bold leading-none">Cambios guardados</p>
+              <p className="text-[10px] opacity-80 mt-1">Sincronizado a las {autoSaveNotice.savedAt}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de formulario */}
       {showForm && (
