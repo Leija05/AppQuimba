@@ -12,8 +12,8 @@ const APP_USER_MODEL_ID = 'com.gestionlogistica.app';
 // --- CONFIGURACIÓN DE LICENCIA ---
 const SECRET_KEY = process.env.QUIMBAR_LICENSE_SECRET;
 const ALGORITHM = 'aes-256-cbc';
-const LICENSE_FOLDER = path.join(process.env.APPDATA, 'GestionLogistica');
-const LICENSE_PATH = path.join(LICENSE_FOLDER, 'license.dat');
+const LICENSE_FOLDER = path.join(process.env.APPDATA);
+const LICENSE_PATH = path.join(LICENSE_FOLDER);
 const RENEW_PAGE_URL = 'https://leija05.github.io/Venta/';
 
 let backendProcess = null;
